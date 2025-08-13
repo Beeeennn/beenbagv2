@@ -2,7 +2,7 @@
 from discord.ext import commands
 import logging
 from utils.prefixes import get_cached_prefix
-from utils.game_helpers import gain_exp,ensure_player,sucsac
+from utils.game_helpers import gain_exp,ensure_player,sucsac,lb_inc
 from tasks.spawns import start_all_guild_spawn_tasks, start_guild_spawn_task, stop_guild_spawn_task
 from tasks.fish_food import give_fish_food_task
 from datetime import datetime, timezone
@@ -145,6 +145,7 @@ class Events(commands.Cog):
                 # 1) Add to the barn (or sacrifice if full)
                 #    First ensure the player/barn rows exist:
                 await ensure_player(conn,message.author.id,guild_id)
+                await lb_inc(conn,"mobs_caught",message.author.id,guild_id,+1)
                 await conn.execute(
                     "INSERT INTO barn_upgrades (user_id,guild_id) VALUES ($1,$2) ON CONFLICT DO NOTHING;",
                     message.author.id,guild_id

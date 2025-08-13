@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from constants import MINECRAFT_COLORS,FISHTYPES,FISHINGCHANCE, TIER_ORDER
-from utils.game_helpers import ensure_player, save_image_bytes, resolve_member, media_url, gid_from_ctx
+from utils.game_helpers import ensure_player, save_image_bytes, resolve_member, media_url, gid_from_ctx,lb_inc
 import random
 import discord
 import io
@@ -22,6 +22,7 @@ async def make_fish(pool, ctx,fish_path: str):
 
     user_id = ctx.author.id
     guild_id = gid_from_ctx(ctx)
+    
     # Pick 2 distinct colors
     color_names = random.sample(list(MINECRAFT_COLORS.keys()), 2)
     color1 = MINECRAFT_COLORS[color_names[0]]
@@ -29,6 +30,7 @@ async def make_fish(pool, ctx,fish_path: str):
     typef = random.choice(FISHTYPES)
     async with pool.acquire() as conn:
         await ensure_player(conn,ctx.author.id,guild_id)
+        await lb_inc(conn,"fish_caught",user_id,guild_id)
         # 1) Fetch all usable rods
         rods = await conn.fetch(
             """

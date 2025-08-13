@@ -150,6 +150,8 @@ VALID_METRICS = {
     "wood_collected":    "Wood collected",
     "ore_mined":         "Ore mined",
     "crops_harvested":   "Crops harvested",
+    "emeralds": "Emeralds",
+    "experience": "Experience"
     # add more freely…
 }
 
