@@ -3,7 +3,7 @@ import asyncio
 from core.bot_client import BeenBag
 from config import settings
 from db.pool import init_pool, close_pool, get_pool
-from http.server import start_http_server, stop_http_server
+from http_server.server import start_http_server, stop_http_server
 
 COGS = [
     "cogs.admin",
