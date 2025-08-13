@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 from utils.prefixes import dynamic_prefix, warm_prefix_cache
 from db.pool import init_pool
+from config import settings
 
 
 class BeenBag(commands.Bot):
@@ -25,7 +26,7 @@ class BeenBag(commands.Bot):
 
     async def setup_hook(self):
         # create db pool and cache prefixes before cogs start using them
-        self.db_pool = await init_pool()
+        self.db_pool = await init_pool(settings.DATABASE_URL)
         await warm_prefix_cache(self.db_pool)
 
         # load cogs
@@ -47,3 +48,6 @@ class BeenBag(commands.Bot):
                 await self.db_pool.close()
         finally:
             await super().close()
+    async def shutdown_background_tasks(self):
+        # Stop any background loops or tasks here if needed
+        pass
