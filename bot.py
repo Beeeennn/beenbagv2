@@ -17,10 +17,6 @@ async def run():
     pool = await init_pool(settings.DATABASE_URL)
     bot = BeenBag(db_pool=pool)
 
-    # load cogs
-    for ext in COGS:
-        await bot.load_extension(ext)
-
     # start HTTP server
     runner = await start_http_server(port=settings.PORT, db_pool=pool)
 

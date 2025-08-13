@@ -19,6 +19,7 @@ class BeenBag(commands.Bot):
             **kwargs
         )
         self.db_pool = None
+        self.state = {}
 
         # Import here to avoid potential circulars
         from core.checks import only_in_game_channels

@@ -3,7 +3,7 @@ import random
 import asyncio
 from constants import DISABLED_SHOP_ITEMS,MOBS
 from utils.game_helpers import gid_from_ctx,give_mob,sucsac,gain_exp,give_items,giverole, get_items,take_items
-from datetime import datetime,timedelta
+from datetime import datetime,timedelta,timezone
 
 async def shop(pool,ctx):
     """List all items you can buy in the shop (with some items hidden)."""
@@ -209,7 +209,7 @@ async def buy(pool, ctx, args):
 
         # 4) Enforce daily limit (for Exp Bottle only, or any limited item)
         if limit is not None:
-            since = datetime.utcnow() - timedelta(hours=24)
+            since = datetime.now(timezone.utc) - timedelta(hours=24)
             bought = await conn.fetchval(
                 """
                 SELECT COUNT(*) FROM purchase_history
