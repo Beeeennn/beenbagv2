@@ -22,7 +22,7 @@ class Events(commands.Cog):
     async def on_ready(self):
         logging.info("Bot ready as %s", self.bot.user)
         start_all_guild_spawn_tasks(self.bot)
-        give_fish_food_task(self.bot)
+        give_fish_food_task(self.bot,self.bot.db_pool)
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
