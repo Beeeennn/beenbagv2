@@ -26,8 +26,6 @@ class BeenBag(commands.Bot):
         self.add_check(only_in_game_channels())
 
     async def setup_hook(self):
-        # create db pool and cache prefixes before cogs start using them
-        self.db_pool = await init_pool(settings.DATABASE_URL)
         await warm_prefix_cache(self.db_pool)
 
         # load cogs
