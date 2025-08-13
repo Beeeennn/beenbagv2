@@ -65,6 +65,10 @@ class Game(commands.Cog):
         # services.barn.sac(ctx, pool, mob_name)
         await barn.sac(ctx, self.bot.db_pool, mob_name)
 
+    @commands.command(name="inv", aliases=["inventory"])
+    async def inv(self, ctx, *, who: str = None):
+        await inventory.inv(self.bot.db_pool,ctx,who)
+
     @commands.command(name="give")
     async def give(self, ctx, who: str, *, mob: str):
         # services.barn.give(pool, ctx, who, mob)
