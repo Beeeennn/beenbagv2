@@ -4,13 +4,10 @@ from core.bot_client import BeenBag
 from config import settings
 from db.pool import init_pool, close_pool, get_pool
 from http_server.server import start_http_server, stop_http_server
-import logging, sys
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    stream=sys.stdout,
-)
-logging.getLogger("beenbag.tracer").setLevel(logging.WARNING)
+print("=== BOT.PY ENTRYPOINT REACHED ===")
+import logging
+logging.basicConfig(level=logging.INFO)
+logging.info("Bot starting… (this is before anything else runs)")
 
 async def run():
     pool = await init_pool(settings.DATABASE_URL)
