@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import random
 from constants import MOBS,RARITIES,COLOR_MAP
 import discord
+import asyncio
 chat_xp_cd = commands.CooldownMapping.from_cooldown(
     2,                # max tokens
     1800.0,           # per 1800 seconds (30m)
@@ -22,7 +23,7 @@ class Events(commands.Cog):
     async def on_ready(self):
         logging.info("Bot ready as %s", self.bot.user)
         start_all_guild_spawn_tasks(self.bot)
-        give_fish_food_task(self.bot,self.bot.db_pool)
+        asyncio.create_task(give_fish_food_task(self.bot, self.bot.db_pool))
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
