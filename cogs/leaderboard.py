@@ -153,27 +153,42 @@ def metric_options(current: str) -> List[discord.SelectOption]:
 
 class LBMetricSelect(ui.Select):
     def __init__(self, view: "LBView"):
-        super().__init__(placeholder="Choose leaderboard…", options=metric_options(view.metric), row=0)
+        super().__init__(placeholder="Choose leaderboard…",
+                         options=metric_options(view.metric), row=0)
         self.view_ref = view
 
     async def callback(self, interaction: discord.Interaction):
-        self.view_ref.metric = self.values[0]
+        new_metric = self.values[0]
+        self.view_ref.metric = new_metric
         self.view_ref.page = 0
+
+        # reflect the new selection in the UI
+        for opt in self.options:
+            opt.default = (opt.value == new_metric)
+
         await self.view_ref.refresh(interaction)
+
 
 
 class LBScopeSelect(ui.Select):
     def __init__(self, view: "LBView", has_guild: bool):
-        opts = [discord.SelectOption(label="Global", value="global", default=(view.scope == "global"))]
+        opts = [discord.SelectOption(label="Global", value="global",
+                                     default=(view.scope == "global"))]
         if has_guild:
-            opts.insert(0, discord.SelectOption(label="This server", value="guild", default=(view.scope == "guild")))
-        super().__init__(placeholder="Scope…", options=opts, row=1)  # <-- was row=0; make it 1
+            opts.insert(0, discord.SelectOption(label="This server", value="guild",
+                                                default=(view.scope == "guild")))
+        super().__init__(placeholder="Scope…", options=opts, row=1)
         self.view_ref = view
 
-
     async def callback(self, interaction: discord.Interaction):
-        self.view_ref.scope = self.values[0]
+        new_scope = self.values[0]
+        self.view_ref.scope = new_scope
         self.view_ref.page = 0
+
+        # reflect the new selection in the UI
+        for opt in self.options:
+            opt.default = (opt.value == new_scope)
+
         await self.view_ref.refresh(interaction)
 
 
@@ -236,6 +251,14 @@ class LBView(ui.View):
         if self.page > max_page:
             self.page = max_page
             embed, total = await self.build_embed()
+
+        # keep buttons in sync with page bounds
+        for child in self.children:
+            if isinstance(child, ui.Button):
+                if child.label == "Prev":
+                    child.disabled = (self.page <= 0)
+                elif child.label == "Next":
+                    child.disabled = (self.page >= max_page)
 
         try:
             await interaction.response.edit_message(embed=embed, view=self)

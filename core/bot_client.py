@@ -18,7 +18,7 @@ class BeenBag(commands.Bot):
             help_command=None,
             **kwargs
         )
-        self.db_pool = None
+        self.db_pool = kwargs.pop("db_pool", None)
         self.state = {}
 
         # Import here to avoid potential circulars
@@ -26,6 +26,8 @@ class BeenBag(commands.Bot):
         self.add_check(only_in_game_channels())
 
     async def setup_hook(self):
+        if self.db_pool is None:
+            self.db_pool = await init_pool(settings.DATABASE_URL)
         await warm_prefix_cache(self.db_pool)
 
         # load cogs

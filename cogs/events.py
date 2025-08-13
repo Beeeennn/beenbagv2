@@ -214,7 +214,6 @@ class Events(commands.Cog):
                     await message.channel.send(embed=embed)
                     # skip further processing (so they don’t also run a command)
                 return
-        await self.bot.process_commands(message)
 
 async def setup(bot):
     await bot.add_cog(Events(bot))
