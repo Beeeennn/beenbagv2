@@ -260,16 +260,6 @@ async def lb_inc(conn, leaderboard_name: str, user_id: int, guild_id: int | None
             leaderboard_name, user_id, guild_id, amount
         )
 
-    # 2) Global row (guild_id = NULL)
-    await conn.execute(
-        """
-        INSERT INTO lb_counters(metric, user_id, guild_id, value)
-        VALUES ($1, $2, NULL, $3)
-        ON CONFLICT (metric, user_id, guild_id)
-        DO UPDATE SET value = lb_counters.value + EXCLUDED.value
-        """,
-        leaderboard_name, user_id, amount
-    )
 async def ensure_player(conn, user_id, guild_id: int):
         await conn.execute(
             "INSERT INTO new_players (guild_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING;",
