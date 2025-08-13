@@ -162,8 +162,9 @@ class LBScopeSelect(ui.Select):
         opts = [discord.SelectOption(label="Global", value="global", default=(view.scope == "global"))]
         if has_guild:
             opts.insert(0, discord.SelectOption(label="This server", value="guild", default=(view.scope == "guild")))
-        super().__init__(placeholder="Scope…", options=opts, row=0)
+        super().__init__(placeholder="Scope…", options=opts, row=1)  # <-- was row=0; make it 1
         self.view_ref = view
+
 
     async def callback(self, interaction: discord.Interaction):
         self.view_ref.scope = self.values[0]
@@ -237,18 +238,18 @@ class LBView(ui.View):
             await interaction.edit_original_response(embed=embed, view=self)
 
     # --- Buttons ---
-    @ui.button(label="Prev", style=discord.ButtonStyle.secondary, row=1)
+    @ui.button(label="Prev", style=discord.ButtonStyle.secondary, row=2)
     async def prev_btn(self, interaction: discord.Interaction, button: ui.Button):
         if self.page > 0:
             self.page -= 1
         await self.refresh(interaction)
 
-    @ui.button(label="Next", style=discord.ButtonStyle.secondary, row=1)
+    @ui.button(label="Next", style=discord.ButtonStyle.secondary, row=2)
     async def next_btn(self, interaction: discord.Interaction, button: ui.Button):
         self.page += 1
         await self.refresh(interaction)
 
-    @ui.button(label="Refresh", style=discord.ButtonStyle.primary, row=1)
+    @ui.button(label="Refresh", style=discord.ButtonStyle.primary, row=2)
     async def refresh_btn(self, interaction: discord.Interaction, button: ui.Button):
         await self.refresh(interaction, hard=True)
 
