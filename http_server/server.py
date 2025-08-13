@@ -24,6 +24,7 @@ def make_app(db_pool):
         })
 
     app.router.add_get("/", handle_ping)
+    app.router.add_get("/healthz", handle_ping)
     app.router.add_get("/i/{id}", handle_get_image)
     return app
 
