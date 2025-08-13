@@ -83,9 +83,11 @@ class Events(commands.Cog):
             logging.exception("Failed to send welcome message")
 
     @commands.Cog.listener()
-    async def on_message(self,message):
+    async def on_message(self, message):
         if message.author.bot:
             return
+        if message.guild is None:
+            return await message.channel.send("This is a dm")
         guild_id = message.guild.id
         # auto–eye-roll on every message from that specific user
         # inside on_message, after you computed guild_id

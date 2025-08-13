@@ -112,27 +112,32 @@ async def fetch_lb(conn, *, metric: str, scope: str, guild_id: Optional[int], of
             )
         return [dict(r) for r in rows], int(total or 0)
 
-    # --- Default: lb_counters (your original implementation) ---
-    wanted_gid = guild_id if scope == "guild" else None
+    # --- Default: lb_counters (uses 0 as the sentinel for global) ---
+    wanted_gid = guild_id if (scope == "guild" and guild_id is not None) else 0
+
     rows = await conn.fetch(
         """
         SELECT user_id, value
         FROM lb_counters
-        WHERE metric = $1 AND COALESCE(guild_id, 0) = COALESCE($2, 0)
+        WHERE metric = $1
+          AND guild_id = $2::bigint
         ORDER BY value DESC, user_id
         OFFSET $3 LIMIT $4
         """,
         metric, wanted_gid, offset, limit
     )
+
     total = await conn.fetchval(
         """
         SELECT COUNT(*)
         FROM lb_counters
-        WHERE metric = $1 AND COALESCE(guild_id, 0) = COALESCE($2, 0)
+        WHERE metric = $1
+          AND guild_id = $2::bigint
         """,
         metric, wanted_gid
     )
     return [dict(r) for r in rows], int(total or 0)
+
 
 
 def metric_options(current: str) -> List[discord.SelectOption]:
