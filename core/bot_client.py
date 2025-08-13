@@ -34,9 +34,7 @@ class BeenBag(commands.Bot):
             "cogs.events",
             "cogs.general",
             "cogs.game",
-            "cogs.leaderboard",
-            "cogs.errors",
-            "cogs.debug_tracer"
+            "cogs.leaderboard"
         ):
             try:
                 await self.load_extension(ext)
