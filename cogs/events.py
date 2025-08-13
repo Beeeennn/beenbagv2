@@ -5,7 +5,7 @@ from utils.prefixes import get_cached_prefix
 from utils.game_helpers import gain_exp,ensure_player,sucsac
 from tasks.spawns import start_all_guild_spawn_tasks, start_guild_spawn_task, stop_guild_spawn_task
 from tasks.fish_food import give_fish_food_task
-import datetime
+from datetime import datetime
 import random
 from constants import MOBS,RARITIES,COLOR_MAP
 import discord
