@@ -8,3 +8,5 @@ class Leaderboard(commands.Cog):
     @commands.command(name="exp", aliases=["experience", "level", "lvl"])
     async def exp_cmd(self,ctx, *, who: str = None):
         await progression.exp_cmd(self.bot.db_pool,ctx,who)
+async def setup(bot):
+    await bot.add_cog(Leaderboard(bot))
