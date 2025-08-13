@@ -30,7 +30,7 @@ async def make_fish(pool, ctx,fish_path: str):
     typef = random.choice(FISHTYPES)
     async with pool.acquire() as conn:
         await ensure_player(conn,ctx.author.id,guild_id)
-        await lb_inc(conn,"fish_caught",user_id,guild_id)
+        await lb_inc(conn,"fish_caught",user_id,guild_id,1)
         # 1) Fetch all usable rods
         rods = await conn.fetch(
             """
