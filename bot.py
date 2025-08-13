@@ -4,14 +4,13 @@ from core.bot_client import BeenBag
 from config import settings
 from db.pool import init_pool, close_pool, get_pool
 from http_server.server import start_http_server, stop_http_server
-
-COGS = [
-    "cogs.admin",
-    "cogs.general",
-    "cogs.game",
-    "cogs.events",
-    "cogs.leaderboard",
-]
+import logging, sys
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    stream=sys.stdout,
+)
+logging.getLogger("beenbag.tracer").setLevel(logging.WARNING)
 
 async def run():
     pool = await init_pool(settings.DATABASE_URL)
