@@ -18,10 +18,14 @@ chat_xp_cd = commands.CooldownMapping.from_cooldown(
 class Events(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._ready_once = False
 
     @commands.Cog.listener()
     async def on_ready(self):
-        logging.info("Bot ready as %s", self.bot.user)
+        if self._ready_once:
+            return
+        self._ready_once = True
+        # start tasks only once
         start_all_guild_spawn_tasks(self.bot)
         asyncio.create_task(give_fish_food_task(self.bot, self.bot.db_pool))
 
