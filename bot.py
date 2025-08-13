@@ -1,10 +1,10 @@
 # bot.py
+print("=== BOT.PY ENTRYPOINT REACHED ===")
 import asyncio
 from core.bot_client import BeenBag
 from config import settings
 from db.pool import init_pool, close_pool, get_pool
 from http_server.server import start_http_server, stop_http_server
-print("=== BOT.PY ENTRYPOINT REACHED ===")
 import logging
 logging.basicConfig(level=logging.INFO)
 logging.info("Bot starting… (this is before anything else runs)")
