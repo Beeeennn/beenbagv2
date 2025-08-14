@@ -15,15 +15,11 @@ class Game(commands.Cog):
         await achievements.sync_master(self.bot.db_pool)
 
     @commands.command(name="achievements", aliases=["ach","achs"])
-    async def achievements_cmd(self, ctx, *, who: str = None):
+    async def achievements_cmd(self, ctx, *, who: str | None = None):
         user = ctx.author
         if who and ctx.message.mentions:
             user = ctx.message.mentions[0]
-
-        owned, not_owned = await achievements.list_user_achievements(self.bot.db_pool, user.id)
-        embeds = achievements.render_achievements_embeds(user, owned, not_owned)
-        for e in embeds:
-            await ctx.send(embed=e)
+        await achievements.open_achievements_menu(self.bot.db_pool, ctx, user.id)
     # ---------- Crafting ----------
     @commands.command(name="craft")
     async def craft_cmd(self, ctx, *args):

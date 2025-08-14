@@ -1,7 +1,7 @@
 # services/achievements.py
-from typing import Dict, Any, Iterable, Optional
+from typing import Dict, Any, Iterable, Optional, List
 import asyncpg
-from discord import Embed, Color
+from discord import Embed, Color, ui, ButtonStyle, Interaction
 from utils import game_helpers
 import discord
 
@@ -14,6 +14,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
+        "Category":"Starter",
     },
     "craft_pick": {
         "name": "Craft A Pickaxe",
@@ -21,6 +22,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
+        "Category":"Starter",
     },
     "first_mine": {
         "name": "Yearned for the Mines - `mine`",
@@ -28,6 +30,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
+        "Category":"Starter",
     },
     "first_fish": {
         "name": "Plenty of fish in the sea",
@@ -35,6 +38,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
+        "Category":"Starter",
     },
     "first_farm": {
         "name": "It aint much, but it's honest work",
@@ -42,6 +46,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
+        "Category":"Starter",
     },
     "first_breed": {
         "name": "Matchmaker",
@@ -49,6 +54,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 3,
         "hidden": False,
         "repeatable": False,
+        "Category":"Starter",
     },
     "mob_catch": {
         "name": "Gotcha",
@@ -56,6 +62,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
+        "Category":"Starter",
     },
     "upbarn": {
         "name": "Upgrades, people!",
@@ -63,6 +70,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
+        "Category":"Starter",
     },
     "gift_leg":{
         "name": "Too Kind",
@@ -70,97 +78,111 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 20,
         "hidden": False,
         "repeatable": False,
+        "Category":"Challanging",
     },
     "20_wood": {
         "name": "Lumberjack",
         "description": "Use chop at least 20 times",
         "exp": 5,
         "hidden": False,
-        "repeatable": False,       
+        "repeatable": False,  
+        "Category":"Early",     
     },
     "full_aquarium": {
         "name": "Too Many Fish in the Sea",
         "description": "Have a full aquarium",
         "exp": 5,
         "hidden": False,
-        "repeatable": False,       
+        "repeatable": False, 
+        "Category":"Challenging",      
     },
     "full_food": {
         "name": "No More Food",
         "description": "Obtain fish food at the maximum rate (38 / half hour)",
         "exp": 5,
         "hidden": False,
-        "repeatable": False,       
+        "repeatable": False,  
+        "Category":"Challenging",     
     },
     "overkill": {
         "name": "Overkill",
         "description": "Sacrifice a chicken with a diamond sword",
         "exp": 5,
         "hidden": False,
-        "repeatable": False,       
+        "repeatable": False,  
+        "Category":"Random",     
     },
     "sac": {
         "name": "Don't hate the player",
         "description": "Sacrifice any innocent, passive mob",
         "exp": 5,
         "hidden": False,
-        "repeatable": False,       
+        "repeatable": False,  
+        "Category":"Starter",     
     },
     "epic_mob": {
         "name": "EPIC!",
         "description": "catch an epic mob",
         "exp": 5,
         "hidden": False,
-        "repeatable": False,       
+        "repeatable": False,     
+        "Category":"Early",  
     },
     "chicken_jockey": {
         "name": "CHICKEN JOCKEY",
         "description": "catch a zombie while you have a chicken in your barn", #################
         "exp": 5,
         "hidden": True,
-        "repeatable": False,       
+        "repeatable": False,    
+        "Category":"Starter",   
     },
     "1000_ems":{
         "name": "Slightly Rich",
         "description": "Have 1000 emeralds", ###############
         "exp": 20,
         "hidden": False,
-        "repeatable": False,       
+        "repeatable": False,      
+        "Category":"Challenging", 
     },
     "10000_ems":{
         "name": "Very Rich",
         "description": "Have 10000 emeralds", ###################
         "exp": 20,
         "hidden": False,
-        "repeatable": False,       
+        "repeatable": False,  
+        "Category":"Extreme",     
     },
     "dia_with_wood": {
         "name": "RNG Carried",
         "description": "Mine a diamond with a wood pickaxe",
         "exp": 10,
         "hidden": False,
-        "repeatable": False,       
+        "repeatable": False,  
+        "Category":"Random",     
     },
     "dia_hoe": {
         "name": "Don't waste your diamonds on a hoe",
         "description": "...unless you want this achievement (craft a diamond hoe)",
         "exp": 5,
         "hidden": False,
-        "repeatable": False,       
+        "repeatable": False,      
+        "Category":"Early", 
     },
     "full_bestiary": {
         "name": "Master Assassin",
         "description": "Sacrifice at least one of every mob", ######
         "exp": 20,
         "hidden": False,
-        "repeatable": False,       
+        "repeatable": False,     
+        "Category":"Extreme",  
     },
     "full_barn": {
         "name": "Noah's Ark",
         "description": "Have at least one of every breedable mob in your barn", ########
         "exp": 20,
         "hidden": False,
-        "repeatable": False,       
+        "repeatable": False,  
+        "Category":"Extreme",     
     },
 }
 
@@ -446,35 +468,173 @@ async def try_grant_many(pool: asyncpg.Pool, ctx, user_id: int, keys: Iterable[s
         total += gained
     return total
 
-async def list_user_achievements(pool: asyncpg.Pool, user_id: int):
-    """
-    Returns: (owned, not_owned) where:
-      owned = list[ {key, name, description, exp, times_awarded, unlocked_at} ]
-      not_owned = list[ {key, name, description, exp, hidden} ]  (filtered if hidden)
-    """
+# Update sync_master to pass category (default "General")
+async def sync_master(pool: asyncpg.Pool):
     async with pool.acquire() as con:
-        rows = await con.fetch("""
-            SELECT a.key, a.name, a.description, a.exp, a.hidden, a.repeatable,
-                   ua.times_awarded, ua.unlocked_at
-            FROM achievement a
-            LEFT JOIN user_achievement ua
-              ON ua.achievement_id = a.id AND ua.user_id = $1
-            ORDER BY a.name
-        """, user_id)
+        async with con.transaction():
+            for k, v in ACHIEVEMENTS.items():
+                await con.execute(
+                    UPSERT_SQL,
+                    k,
+                    v["name"],
+                    v["description"],
+                    v["exp"],
+                    v.get("hidden", False),
+                    v.get("repeatable", False),
+                    v.get("category", "General"),
+                )
 
-    owned, not_owned = [], []
-    for r in rows:
-        if r["times_awarded"] is not None:
-            owned.append({
-                "key": r["key"], "name": r["name"], "description": r["description"],
-                "exp": r["exp"], "times_awarded": r["times_awarded"], "unlocked_at": r["unlocked_at"],
-                "repeatable": r["repeatable"]
-            })
+# ------------------ fetch helpers for UI ------------------
+
+async def _fetch_categories(conn) -> List[str]:
+    rows = await conn.fetch("SELECT DISTINCT category FROM achievement ORDER BY 1")
+    return [r["category"] for r in rows] or ["General"]
+
+async def _fetch_category_rows(conn: asyncpg.Connection, category: str, user_id: int):
+    """Return raw rows for a category with a LEFT JOIN on ownership."""
+    rows = await conn.fetch(
+        """
+        SELECT a.key, a.name, a.description, a.exp, a.hidden, a.repeatable, a.category,
+               ua.times_awarded, ua.unlocked_at
+          FROM achievement a
+          LEFT JOIN user_achievement ua
+            ON ua.achievement_id = a.id AND ua.user_id = $2
+         WHERE a.category = $1
+         ORDER BY a.name
+        """,
+        category, user_id
+    )
+    return rows
+
+def _row_to_line(r) -> str:
+    """Format a single achievement row into a list line."""
+    unlocked = r["times_awarded"] is not None
+    if unlocked:
+        rpt = ""
+        if r["repeatable"] and r["times_awarded"] and r["times_awarded"] > 1:
+            rpt = f" ×{r['times_awarded']}"
+        return f"• **{r['name']}**{rpt} — {r['description']} *(+{r['exp']} EXP)*"
+    else:
+        return f"• **{r['name']}** — {r['description']} *(+{r['exp']} EXP)*"
+
+def _build_achievements_embed(ctx_or_msg, *, category: str, mode_locked: bool,
+                              rows: List[asyncpg.Record], start: int) -> Embed:
+    """
+    mode_locked=False => show Unlocked
+    mode_locked=True  => show Locked (non-hidden only)
+    """
+    # Filter rows according to mode
+    if mode_locked:
+        filt = [r for r in rows if r["times_awarded"] is None and not r["hidden"]]
+        title = f"🏆 Achievements — {category} — Locked"
+        color = Color.dark_grey()
+    else:
+        filt = [r for r in rows if r["times_awarded"] is not None]
+        title = f"🏆 Achievements — {category} — Unlocked"
+        color = Color.gold()
+
+    total = len(filt)
+    start = max(0, min(start, max(0, total - 1)))
+    page = filt[start:start + 10]
+
+    e = Embed(title=title, color=color)
+    if page:
+        lines = [_row_to_line(r) for r in page]
+        e.description = "\n".join(lines)
+        a = start + 1
+        b = min(start + 10, total)
+        e.set_footer(text=f"Showing {a}-{b} of {total} • Use the dropdown to change category • Only you can use the controls.")
+    else:
+        e.description = "Nothing to show here."
+    author = getattr(ctx_or_msg, "author", None)
+    if author:
+        try:
+            e.set_author(name=author.display_name, icon_url=getattr(author.display_avatar, "url", None))
+        except Exception:
+            pass
+    return e
+
+# ------------------ View (dropdown + arrows + locked/unlocked toggle) ------------------
+
+class AchievementsView(discord.ui.View):
+    def __init__(self, ctx, pool, user_id: int, initial_category: str, categories: List[str]):
+        super().__init__(timeout=120)
+        self.ctx = ctx
+        self.pool = pool
+        self.user_id = user_id
+        self.category = initial_category
+        self.categories = categories
+        self.mode_locked = False  # False = show unlocked; True = show locked
+        self.start = 0
+        self.cache: Dict[str, List[asyncpg.Record]] = {}  # raw rows per category
+
+        # Populate the select options
+        self.category_select.options = [
+            discord.SelectOption(label=c, value=c, default=(c == self.category)) for c in categories
+        ]
+
+    async def _load(self):
+        async with self.pool.acquire() as con:
+            if self.category not in self.cache:
+                self.cache[self.category] = await _fetch_category_rows(con, self.category, self.user_id)
+
+    async def _render(self, interaction: Interaction | None = None):
+        await self._load()
+        rows = self.cache.get(self.category, [])
+        # determine total after filter to set button states
+        if self.mode_locked:
+            total = len([r for r in rows if r["times_awarded"] is None and not r["hidden"]])
         else:
-            # Hide hidden achievements the user doesn't have
-            if not r["hidden"]:
-                not_owned.append({
-                    "key": r["key"], "name": r["name"], "description": r["description"],
-                    "exp": r["exp"], "hidden": r["hidden"]
-                })
-    return owned, not_owned
+            total = len([r for r in rows if r["times_awarded"] is not None])
+
+        # button states
+        self.prev_button.disabled = (self.start <= 0)
+        self.next_button.disabled = (self.start + 10 >= total)
+        self.toggle_button.label = "Show Locked" if not self.mode_locked else "Show Unlocked"
+        self.toggle_button.style = ButtonStyle.primary if self.mode_locked else ButtonStyle.secondary
+
+        embed = _build_achievements_embed(self.ctx, category=self.category, mode_locked=self.mode_locked,
+                                          rows=rows, start=self.start)
+        if interaction:
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await self.ctx.send(embed=embed, view=self)
+
+    async def interaction_check(self, interaction: Interaction) -> bool:
+        # Only the invoker can use this view
+        return interaction.user.id == self.ctx.author.id
+
+    @discord.ui.select(placeholder="Select a category…", min_values=1, max_values=1, row=0)
+    async def category_select(self, interaction: Interaction, select: discord.ui.Select):
+        self.category = select.values[0]
+        # reset paging when switching category
+        self.start = 0
+        await self._render(interaction)
+
+    @discord.ui.button(label="Show Locked", style=ButtonStyle.secondary, row=1)
+    async def toggle_button(self, interaction: Interaction, button: discord.ui.Button):
+        self.mode_locked = not self.mode_locked
+        self.start = 0
+        await self._render(interaction)
+
+    @discord.ui.button(emoji="◀️", style=ButtonStyle.secondary, row=1)
+    async def prev_button(self, interaction: Interaction, button: discord.ui.Button):
+        self.start = max(0, self.start - 10)
+        await self._render(interaction)
+
+    @discord.ui.button(emoji="▶️", style=ButtonStyle.secondary, row=1)
+    async def next_button(self, interaction: Interaction, button: discord.ui.Button):
+        self.start = self.start + 10
+        await self._render(interaction)
+
+# ------------------ Public opener ------------------
+
+async def open_achievements_menu(pool: asyncpg.Pool, ctx, user_id: int):
+    """Send the interactive Achievements menu for this user."""
+    # Ensure the schema has category column
+    await ensure_schema(pool)
+
+    async with pool.acquire() as con:
+        cats = await _fetch_categories(con)
+    view = AchievementsView(ctx, pool, user_id, cats[0], cats)
+    await view._render()
