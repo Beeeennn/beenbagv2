@@ -165,6 +165,49 @@ class Admin(commands.Cog):
                 ctx.guild.id
             )
         await ctx.send("✅ Welcome messages **disabled** for this server.")
+    @commands.command(name="addmilestone", help="Set a level → role milestone. Usage: addmilestone <level> <@role>")
+    @commands.has_guild_permissions(manage_guild=True)
+    async def add_milestone(self, ctx: commands.Context, level: int, role: discord.Role):
+        """Admin-only: map a level to a role in guild_level_roles."""
+        if level <= 0:
+            return await ctx.send("❌ Level must be a positive integer.")
+
+        # sanity: can the bot assign this role?
+        me = ctx.guild.me
+        warn = None
+        if not me.guild_permissions.manage_roles:
+            warn = "⚠️ I don't have **Manage Roles**, so I won't be able to assign this role on level-up."
+        elif role >= me.top_role:
+            warn = f"⚠️ **{role.name}** is higher/equal to my top role; I can't assign it. Move my role above it."
+
+        # upsert into DB
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO guild_level_roles (guild_id, level, role_id)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (guild_id, level)
+                DO UPDATE SET role_id = EXCLUDED.role_id
+                """,
+                ctx.guild.id, level, role.id
+            )
+        msg = f"✅ Milestone set: **Level {level} → {role.mention}**."
+        if warn:
+            msg += f"\n{warn}"
+        await ctx.send(msg)
+    @commands.command(name="removemilestone", help="Remove a level → role milestone. Usage: removemilestone <level>")
+    @commands.has_guild_permissions(manage_guild=True)
+    async def remove_milestone(self, ctx: commands.Context, level: int):
+        async with self.bot.db_pool.acquire() as conn:
+            done = await conn.execute(
+                "DELETE FROM guild_level_roles WHERE guild_id=$1 AND level=$2",
+                ctx.guild.id, level
+            )
+        if done.endswith("0"):
+            return await ctx.send(f"ℹ️ No milestone found at level **{level}**.")
+        await ctx.send(f"🗑️ Removed milestone for **Level {level}**.")
+
+
 
     # ---------- Setup wizard ----------
     @commands.command(name="setupbot", aliases=["setup"])
