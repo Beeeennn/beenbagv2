@@ -63,7 +63,7 @@ class Game(commands.Cog):
     @commands.command(name="sacrifice", aliases=["sac", "kill"])
     async def sacrifice(self, ctx, *, mob_name: str):
         # services.barn.sac(ctx, pool, mob_name)
-        await barn.sac(ctx, self.bot.db_pool, mob_name)
+        await barn.sac(self.bot.db_pool, ctx, mob_name)
 
     @commands.command(name="inv", aliases=["inventory"])
     async def inv(self, ctx, *, who: str = None):

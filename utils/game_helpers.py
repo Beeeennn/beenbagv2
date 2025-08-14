@@ -200,7 +200,7 @@ async def gain_exp(conn, bot, user_id: int, exp_gain: int, message=None, guild_i
     new_lvl = get_level_from_exp(new_exp)
     if new_lvl <= old_lvl:
         return
-
+    await lb_inc(conn, "overall_experience",user_id,guild_id,exp_gain)
     announce_id = await conn.fetchval("""
         SELECT announce_channel_id FROM guild_settings WHERE guild_id = $1
     """, guild_id)
@@ -309,7 +309,8 @@ async def give_items(user_id: int, item: str, amount: int, cat, useable, conn, g
             INSERT INTO player_items (guild_id, player_id, item_name, category, quantity, useable)
             VALUES ($1, $2, $3, $4, $5, $6)
         """, guild_id, user_id, item, cat, amount, useable)
-
+    if item == "emeralds":
+        await lb_inc(conn, "overall_emeralds",user_id,guild_id,amount)
 async def get_items(conn,user_id, item,guild_id:int):
 
     row = await conn.fetchrow("""

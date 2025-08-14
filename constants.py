@@ -145,13 +145,13 @@ ROLE_NAMES = {
 }
 
 VALID_METRICS = {
-    "mobs_caught":       "Total mobs caught",
-    "fish_caught":       "Fish caught",
-    "wood_collected":    "Wood collected",
-    "ore_mined":         "Ore mined",
-    "crops_harvested":   "Crops harvested",
-    "emeralds": "Emeralds",
-    "experience": "Experience"
+    "mobs_caught":       "Total Mobs Caught",
+    "fish_caught":       "Fish Caught",
+    "wood_collected":    "Wood Chopped",
+    "emeralds": "Current Emeralds",
+    "experience": "Current Experience",
+    "overall_emeralds":"Total Emeralds Earned",
+    "overall_experience" : "Total Experience Gained"
     # add more freely…
 }
 

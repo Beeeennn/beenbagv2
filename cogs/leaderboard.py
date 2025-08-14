@@ -9,7 +9,7 @@ from constants import VALID_METRICS  # e.g. {"mobs_caught":"Mobs Caught", ...}
 PAGE_SIZE = 10
 
 
-EMERALD_ITEM_NAME = "emerald"  # change to "emeralds" if that’s your row name
+EMERALD_ITEM_NAME = "emeralds"  # change to "emeralds" if that’s your row name
 
 PAGE_SIZE = 10
 
@@ -78,7 +78,7 @@ async def fetch_lb(conn, *, metric: str, scope: str, guild_id: Optional[int], of
         if scope == "guild" and guild_id is not None:
             rows = await conn.fetch(
                 """
-                SELECT discord_id AS user_id, MAX(overallexp)::bigint AS value
+                SELECT discord_id AS user_id, MAX(experience)::bigint AS value
                 FROM accountinfo
                 WHERE guild_id = $1
                 GROUP BY discord_id

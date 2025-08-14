@@ -1,4 +1,4 @@
-from utils.game_helpers import gid_from_ctx,ensure_player,give_items,get_items
+from utils.game_helpers import gid_from_ctx,ensure_player,give_items,get_items,lb_inc
 import discord
 from constants import TIER_ORDER, DROP_TABLES, WHEAT_DROP, AXEWOOD
 import asyncio
@@ -126,7 +126,7 @@ async def chop(pool, ctx):
         )
         # fetch the updated wood count
         wood = await get_items(conn,user_id,"wood",guild_id)
-
+        lb_inc(conn,"wood_collected",user_id,guild_id,num)
     await ctx.send(
         f"{ctx.author.mention} swung their axe and chopped 🌳 **{num} wood**! "
         f"You now have **{wood}** wood."
