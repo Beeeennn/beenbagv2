@@ -3,6 +3,7 @@ from typing import Dict, Any, Iterable, Optional
 import asyncpg
 from discord import Embed, Color
 from utils import game_helpers
+import discord
 
 # ---- 2a) Define your achievements here (source of truth) ----
 # key must be stable; you can safely change name/description/exp later.
@@ -193,35 +194,85 @@ ON CONFLICT (key) DO UPDATE SET
   hidden = EXCLUDED.hidden,
   repeatable = EXCLUDED.repeatable;
 """
-# --- Embeds ---
+# --- helpers to work with Context OR Message -------------------------------
+
 def _safe_avatar(user):
     try:
         return getattr(user.display_avatar, "url", None) or getattr(user.avatar, "url", None)
     except Exception:
         return None
 
-async def _send_unlock_embed(ctx, *, key: str, name: str, description: str, exp: int,
-                             repeatable: bool, times_awarded: int):
+async def _ctx_send(ctx_or_msg, **kwargs):
+    """Send using ctx.send(...) if available, else message.channel.send(...)."""
+    send = getattr(ctx_or_msg, "send", None)
+    if callable(send):
+        return await send(**kwargs)
+    ch = getattr(ctx_or_msg, "channel", None)
+    if ch and hasattr(ch, "send"):
+        return await ch.send(**kwargs)
+    # last resort (shouldn't happen)
+    raise RuntimeError("No way to send message from the given context/message.")
+
+def _resolve_bot(ctx_or_msg) -> Optional[discord.Client]:
+    """Get a bot/client from Context or Message."""
+    bot = getattr(ctx_or_msg, "bot", None) or getattr(ctx_or_msg, "client", None)
+    if bot:
+        return bot
+    # Try to pull from guild/channel state
+    g = getattr(ctx_or_msg, "guild", None)
+    if g is not None:
+        st = getattr(g, "_state", None)
+        if st:
+            bot = getattr(st, "client", None)
+            if bot:
+                return bot
+            getter = getattr(st, "_get_client", None)
+            if callable(getter):
+                try:
+                    return getter()
+                except Exception:
+                    pass
+    ch = getattr(ctx_or_msg, "channel", None)
+    if ch is not None:
+        st = getattr(ch, "_state", None)
+        if st:
+            bot = getattr(st, "client", None)
+            if bot:
+                return bot
+    return None
+
+async def _send_unlock_embed(ctx_or_msg, *, key: str, name: str, description: str,
+                             exp: int, repeatable: bool, times_awarded: int):
     trophy = "🏆"
     title = f"{trophy} Achievement Unlocked!"
     desc = f"**{name}**\n{description}"
 
+    author = getattr(ctx_or_msg, "author", None)
     e = Embed(title=title, description=desc, color=Color.gold())
     e.add_field(name="EXP", value=f"+{exp}", inline=True)
     if repeatable and times_awarded > 1:
         e.add_field(name="Times Awarded", value=f"×{times_awarded}", inline=True)
-
-    e.set_author(name=ctx.author.display_name, icon_url=_safe_avatar(ctx.author))
+    if author:
+        e.set_author(name=getattr(author, "display_name", "You"), icon_url=_safe_avatar(author))
     e.set_footer(text=key)
 
     try:
-        await ctx.send(embed=e)
+        await _ctx_send(ctx_or_msg, embed=e)
     except Exception:
         # never break gameplay if an embed fails
         try:
-            await ctx.send(f"{trophy} **Achievement Unlocked:** {name} (+{exp} EXP)")
+            await _ctx_send(ctx_or_msg, content=f"{trophy} **Achievement Unlocked:** {name} (+{exp} EXP)")
         except Exception:
             pass
+
+# ---- EXP hand-off (works with Context OR Message) -------------------------
+
+async def _grant_exp(conn: asyncpg.Connection, ctx_or_msg, user_id: int, amount: int):
+    """Grant EXP using the same DB connection; resolves bot and guild from ctx/message."""
+    gid = game_helpers.gid_from_ctx(ctx_or_msg)
+    bot = _resolve_bot(ctx_or_msg)
+    # Pass the original message/context in as 'message' so your gain_exp can still use guild/member
+    await game_helpers.gain_exp(conn, bot, user_id, amount, ctx_or_msg, gid)
 async def ensure_schema(pool: asyncpg.Pool):
     async with pool.acquire() as con:
         await con.execute(SCHEMA_SQL)
@@ -257,12 +308,7 @@ async def _grant_exp(conn, ctx, amount: int):
     gid = game_helpers.gid_from_ctx(ctx)
     await game_helpers.gain_exp(conn,ctx.bot, ctx.author.id, amount, None, gid) 
 
-# ---- 2d) Public API ----
 async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, notify: bool = True) -> Optional[int]:
-    """
-    Grant (idempotent for non-repeatables). Returns EXP granted (int),
-    0 if already owned (non-repeatable), or None if key unknown.
-    """
     meta = ACHIEVEMENTS.get(key)
     if not meta:
         return None
@@ -292,7 +338,7 @@ async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, notify: bool = 
                 """,
                 user_id, ach_id
             )
-            await _grant_exp(con, ctx, exp)
+            await _grant_exp(con, ctx, user_id, exp)
             if notify:
                 await _send_unlock_embed(
                     ctx, key=key, name=meta["name"], description=meta["description"],
@@ -310,7 +356,7 @@ async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, notify: bool = 
                 user_id, ach_id
             )
             if inserted:
-                await _grant_exp(con, ctx, exp)
+                await _grant_exp(con, ctx, user_id, exp)
                 if notify:
                     await _send_unlock_embed(
                         ctx, key=key, name=meta["name"], description=meta["description"],
@@ -333,65 +379,7 @@ async def try_grant_many(pool: asyncpg.Pool, ctx, user_id: int, keys: Iterable[s
         gained = await try_grant(pool, ctx, user_id, k) or 0
         total += gained
     return total
-def _lines_to_embeds(title: str, lines: list[str], color: Color, author=None, icon_url=None):
-    # Split long lists into multiple embeds safely
-    chunks = []
-    cur = []
-    cur_len = 0
-    for line in lines:
-        if cur_len + len(line) + 1 > 3800:  # leave room for title/headers
-            chunks.append(cur)
-            cur, cur_len = [], 0
-        cur.append(line)
-        cur_len += len(line) + 1
-    if cur:
-        chunks.append(cur)
 
-    embeds = []
-    for i, chunk in enumerate(chunks, 1):
-        e = Embed(title=title, description="\n".join(chunk), color=color)
-        if author:
-            e.set_author(name=author, icon_url=icon_url)
-        if len(chunks) > 1:
-            e.set_footer(text=f"Page {i}/{len(chunks)}")
-        embeds.append(e)
-    return embeds
-
-def render_achievements_embeds(user, owned: list[dict], not_owned: list[dict]) -> list[Embed]:
-    # Owned (unlocked)
-    owned_lines = []
-    for o in owned:
-        rpt = f" ×{o['times_awarded']}" if o.get("repeatable") and o.get("times_awarded", 1) > 1 else ""
-        owned_lines.append(f"• **{o['name']}**{rpt} — {o['description']} *(+{o['exp']} EXP)*")
-
-    # Locked (non-hidden)
-    locked_lines = [f"• **{n['name']}** — {n['description']} *(+{n['exp']} EXP)*" for n in not_owned]
-
-    icon = _safe_avatar(user)
-    embeds: list[Embed] = []
-
-    if owned_lines:
-        embeds += _lines_to_embeds(
-            title=f"🏆 {user.display_name} — Unlocked ({len(owned)})",
-            lines=owned_lines,
-            color=Color.gold(),
-            author=user.display_name,
-            icon_url=icon
-        )
-
-    if locked_lines:
-        embeds += _lines_to_embeds(
-            title=f"🔒 {user.display_name} — Locked ({len(not_owned)})",
-            lines=locked_lines,
-            color=Color.dark_grey(),
-            author=user.display_name,
-            icon_url=icon
-        )
-
-    if not embeds:
-        embeds = [Embed(title="Achievements", description="No achievements defined yet.", color=Color.blurple())]
-
-    return embeds
 async def list_user_achievements(pool: asyncpg.Pool, user_id: int):
     """
     Returns: (owned, not_owned) where:
