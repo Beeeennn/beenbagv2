@@ -281,7 +281,7 @@ async def mine(pool, ctx):
             msg = await ctx.send(embed=pre, file=file)
 
             # Brief animation pause
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(3.0)
 
             # Edit to the final RESULT EMBED and KEEP the same attachment
             # (attachments=msg.attachments preserves the file so the embed can still display it)

@@ -295,19 +295,6 @@ async def _get_user_ach(con: asyncpg.Connection, user_id: int, ach_id: int):
         user_id, ach_id
     )
 
-# ---- 2c) EXP hand-off ----
-async def _grant_exp(conn, ctx, amount: int):
-    """
-    Call your existing progression.gain_exp here.
-    Adjust call signature as needed — most projects either do:
-        await progression.gain_exp(pool, ctx.author.id, amount)
-    or
-        await progression.gain_exp(ctx, pool, amount)
-    Below we try the common patterns to keep this drop-in.
-    """
-    gid = game_helpers.gid_from_ctx(ctx)
-    await game_helpers.gain_exp(conn,ctx.bot, ctx.author.id, amount, None, gid) 
-
 async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, notify: bool = True) -> Optional[int]:
     meta = ACHIEVEMENTS.get(key)
     if not meta:
