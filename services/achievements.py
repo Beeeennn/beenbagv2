@@ -227,13 +227,9 @@ async def _grant_exp(pool: asyncpg.Pool, ctx, amount: int):
     Below we try the common patterns to keep this drop-in.
     """
     from services import progression
-    try:
-        await game_helpers.gain_exp(pool, ctx.author.id, amount)   # pattern A
-    except TypeError:
-        try:
-            await game_helpers.gain_exp(ctx, pool, amount)         # pattern B
-        except TypeError:
-            await game_helpers.gain_exp(ctx, amount)                # pattern C (last resort)
+    gid = game_helpers.gid_from_ctx(ctx)
+    async with pool.acquire() as conn:
+        await game_helpers.gain_exp(conn,ctx.bot, ctx.author.id, amount, None, gid) 
 
 # ---- 2d) Public API ----
 async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str) -> Optional[int]:

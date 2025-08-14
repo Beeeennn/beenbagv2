@@ -1,40 +1,27 @@
 # core/bot_client.py
-import logging
-import asyncpg
-import discord
+import logging, asyncpg, discord
 from discord.ext import commands
-
 from db.pool import init_pool
-from utils import prefixes       # you already have warm_prefix_cache here
-from config import settings      # where DATABASE_URL lives
+from utils import prefixes
+from config import settings
 
 log = logging.getLogger("beenbag.bot")
 
-def _prefix_callable(bot, message):
-    # use your warmed cache; default "!"
-    gid = message.guild.id if message and message.guild else None
-    base = prefixes.get_cached_prefix(gid)  # implement if you don't have it (see note below)
-    return commands.when_mentioned_or(base)(bot, message)
-
 class BeenBag(commands.Bot):
     def __init__(self, db_pool=None, **kwargs):
-        # fallback prefix & intents if not provided by caller
-        if "command_prefix" not in kwargs:
-            kwargs["command_prefix"] = _prefix_callable
-        if "intents" not in kwargs:
-            intents = discord.Intents.default()
-            # enable this if you use classic prefix commands that read message content
-            intents.message_content = True
-            kwargs["intents"] = intents
+        # sensible defaults if not provided by the caller
+        kwargs.setdefault("intents", discord.Intents.default())
+        kwargs["intents"].message_content = True  # if you use prefix cmds
+        kwargs.setdefault("command_prefix", lambda b, m: commands.when_mentioned_or("!")(b, m))
 
         super().__init__(**kwargs)
         self.db_pool = db_pool
+        self.state = {}              # <-- so tasks/spawns.py can use bot.state
         self._bg_tasks = set()
 
     async def _ensure_open_pool(self):
         if self.db_pool is None:
-            self.db_pool = await init_pool(settings.DATABASE_URL)
-            return
+            self.db_pool = await init_pool(settings.DATABASE_URL); return
         try:
             async with self.db_pool.acquire() as con:
                 await con.execute("SELECT 1")
@@ -47,25 +34,26 @@ class BeenBag(commands.Bot):
 
     async def setup_hook(self):
         await self._ensure_open_pool()
-        # warm the prefix cache (resilient once-retry)
         try:
             await prefixes.warm_prefix_cache(self.db_pool)
         except asyncpg.exceptions.InterfaceError as e:
             if "pool is closed" in str(e):
-                log.warning("Pool closed during warm_prefix_cache; rebuilding once.")
                 self.db_pool = await init_pool(settings.DATABASE_URL)
                 await prefixes.warm_prefix_cache(self.db_pool)
             else:
                 raise
 
-        for ext in ("cogs.admin", "cogs.events", "cogs.general", "cogs.game", "cogs.leaderboard"):
+        for ext in ("cogs.admin","cogs.events","cogs.general","cogs.game","cogs.leaderboard"):
             try:
                 await self.load_extension(ext)
             except Exception:
                 log.exception("Failed to load extension %s", ext)
 
     async def close(self):
-        # don't close the shared DB pool here; outer runner owns it
-        for t in list(self._bg_tasks):
-            t.cancel()
+        # cancel any spawn/background tasks stored by your spawner
+        try:
+            for t in list(self.state.get("spawn_tasks", {}).values()):
+                t.cancel()
+        except Exception:
+            pass
         await super().close()

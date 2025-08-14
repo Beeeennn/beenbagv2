@@ -9,17 +9,29 @@ import os
 
 def _tasks(bot): return bot.state.setdefault("spawn_tasks", {})
 
+# tasks/spawns.py
+import asyncio
+
+def _task_dict(bot):
+    # create the dict if missing
+    store = getattr(bot, "state", None)
+    if store is None:
+        bot.state = store = {}
+    return store.setdefault("spawn_tasks", {})
+
 def start_all_guild_spawn_tasks(bot):
     for g in bot.guilds:
         start_guild_spawn_task(bot, g.id)
 
 def start_guild_spawn_task(bot, guild_id: int):
     stop_guild_spawn_task(bot, guild_id)
-    _tasks(bot)[guild_id] = asyncio.create_task(spawn_loop_for_guild(bot, guild_id))
+    t = asyncio.create_task(spawn_loop_for_guild(bot, guild_id))
+    _task_dict(bot)[guild_id] = t
 
 def stop_guild_spawn_task(bot, guild_id: int):
-    t = _tasks(bot).pop(guild_id, None)
-    if t and not t.done(): t.cancel()
+    t = _task_dict(bot).pop(guild_id, None)
+    if t and not t.done():
+        t.cancel()
 
 async def get_spawn_channels_for_guild(bot, guild_id: int):
     rows = await bot.db_pool.fetch("SELECT channel_id FROM guild_spawn_channels WHERE guild_id=$1", guild_id)
