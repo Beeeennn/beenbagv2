@@ -57,22 +57,28 @@ async def login_with_backoff(token: str, db_pool):
         except HTTPException as e:
             status = getattr(e, "status", None)
             if status == 429:
-                # Cloudflare 1015/429 during /users/@me. Back off with jitter.
-                jitter = random.uniform(0, backoff)
-                wait = min(backoff + jitter, BACKOFF_MAX)
-                log.warning("Discord login rate-limited (429). Retrying in %.1fs", wait)
+                wait = None
+
+                # Try to read retry window from the HTTP response
+                resp = getattr(e, "response", None)
+                if resp is not None:
+                    h = getattr(resp, "headers", {}) or {}
+                    # Prefer Discord’s precise reset header; fall back to Retry-After
+                    raw = h.get("X-RateLimit-Reset-After") or h.get("Retry-After")
+                    try:
+                        wait = float(raw) if raw is not None else None
+                    except Exception:
+                        wait = None
+
+                if wait is None:
+                    # Fallback: your existing exponential backoff + jitter
+                    jitter = random.uniform(0, backoff)
+                    wait = min(backoff + jitter, BACKOFF_MAX)
+                    backoff = min(backoff * 2, BACKOFF_MAX)
+
+                log.warning("Discord login 429. Sleeping %.2fs before retry.", wait)
                 await asyncio.sleep(wait)
-                backoff = min(backoff * 2, BACKOFF_MAX)
                 continue
-
-            log.exception("Discord login HTTPException (status=%s). Retrying in %ss", status, NON429_DELAY)
-            await asyncio.sleep(NON429_DELAY)
-            continue
-
-        except Exception:
-            log.exception("Unhandled error during bot.start; retrying in %ss", NON429_DELAY)
-            await asyncio.sleep(NON429_DELAY)
-            continue
 
 
 async def run():
