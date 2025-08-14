@@ -221,7 +221,7 @@ async def mine(pool, ctx):
 
     # --- Play the GIF animation from assets/mining/<best_pick>/<drop>.gif ---
     def gif_path_for(bt: str, dr: str) -> Path:
-        base = Path("assets/mining")
+        base = Path("assets/gifs/mining")
         bt = (bt or "default").lower()
         dr = (dr or "default").lower()
         return base / bt / f"{dr}.gif"
@@ -231,7 +231,7 @@ async def mine(pool, ctx):
     if not path.exists():
         path = gif_path_for(best_tier, "default")
         if not path.exists():
-            path = Path("assets/mining/default/default.gif")
+            path = Path("assets/gifs/mining/default/default.gif")
 
     msg = None
     try:
