@@ -217,7 +217,7 @@ async def _get_user_ach(con: asyncpg.Connection, user_id: int, ach_id: int):
     )
 
 # ---- 2c) EXP hand-off ----
-async def _grant_exp(conn, pool: asyncpg.Pool, ctx, amount: int):
+async def _grant_exp(conn, ctx, amount: int):
     """
     Call your existing progression.gain_exp here.
     Adjust call signature as needed — most projects either do:
@@ -263,7 +263,7 @@ async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str) -> Optional[int
                 "INSERT INTO user_achievement (user_id, achievement_id) VALUES ($1, $2)",
                 user_id, ach["id"]
             )
-            await _grant_exp(pool, ctx, ach["exp"])
+            await _grant_exp(con, ctx, ach["exp"])
             return ach["exp"]
 
 async def try_grant(pool: asyncpg.Pool, ctx, user_id: int, key: str) -> Optional[int]:
