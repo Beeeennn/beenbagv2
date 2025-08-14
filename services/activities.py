@@ -136,11 +136,13 @@ async def chop(pool, ctx):
         f"You now have **{wood}** wood."
     )
 
+
 async def mine(pool, ctx):
     """Mine for cobblestone or ores; better pickaxes yield rarer drops."""
     import asyncio, random
     from pathlib import Path
     import discord
+    from services import achievements  # ensure available inside this function
 
     user_id = ctx.author.id
     guild_id = gid_from_ctx(ctx)
@@ -232,8 +234,8 @@ async def mine(pool, ctx):
         await achievements.try_grant(pool, ctx, user_id, "dia_with_wood")
     await achievements.try_grant(pool, ctx, user_id, "first_mine")
 
-    # Build the final result embed
-    def build_result_embed() -> discord.Embed:
+    # Builders ---------------------------------------------------------------
+    def build_result_embed(include_gif: bool = False) -> discord.Embed:
         e = discord.Embed(
             title="⛏️ Mining Result",
             description=f"{ctx.author.mention} mined with a **{best_tier.title()} Pickaxe**!",
@@ -244,6 +246,9 @@ async def mine(pool, ctx):
         e.add_field(name="Total Owned", value=f"**{total} {chosen_ore}**", inline=True)
         if broke:
             e.set_footer(text="Your pickaxe broke!")
+        if include_gif:
+            # keep GIF INSIDE the embed by referring to the attachment
+            e.set_image(url="attachment://mine.gif")
         return e
 
     # --- Play the GIF animation from assets/mining/<best_pick>/<drop>.gif ---
@@ -262,9 +267,9 @@ async def mine(pool, ctx):
     msg = None
     try:
         if path.exists():
+            # Attach once; reference it in BOTH embeds via attachment://
             file = discord.File(path, filename="mine.gif")
 
-            # Initial "swing" embed with GIF
             broke_text = " and it broke" if broke else ""
             pre = discord.Embed(
                 description=f"{ctx.author.mention} swings their **{best_tier.title()} Pickaxe**...{broke_text}",
@@ -272,25 +277,30 @@ async def mine(pool, ctx):
             )
             pre.set_image(url="attachment://mine.gif")
 
+            # Send the initial swing embed WITH the attached GIF
             msg = await ctx.send(embed=pre, file=file)
+
+            # Brief animation pause
             await asyncio.sleep(2.0)
 
-            # Edit to the final RESULT EMBED (keeps the attachment)
-            await msg.edit(embed=build_result_embed())
+            # Edit to the final RESULT EMBED and KEEP the same attachment
+            # (attachments=msg.attachments preserves the file so the embed can still display it)
+            await msg.edit(embed=build_result_embed(include_gif=True), attachments=msg.attachments)
         else:
-            # No GIF: just send the result embed
-            await ctx.send(embed=build_result_embed())
+            # No GIF available → just show the result embed without image
+            await ctx.send(embed=build_result_embed(include_gif=False))
 
     except Exception:
-        # Fallback: still send the result embed
+        # Fallback: still try to show the result embed (with/without GIF if we have it)
         try:
             if msg:
-                await msg.edit(embed=build_result_embed())
+                await msg.edit(embed=build_result_embed(include_gif=True), attachments=msg.attachments)
             else:
-                await ctx.send(embed=build_result_embed())
+                await ctx.send(embed=build_result_embed(include_gif=False))
         except Exception:
-            # Absolute last resort
+            # Absolute last resort: plain text
             await ctx.send(
                 f"{ctx.author.mention} mined with a **{best_tier.title()} Pickaxe** and found "
                 f"{emoji} **{amount} {chosen_ore}**! You now have **{total} {chosen_ore}**."
             )
+
