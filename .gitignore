@@ -3,3 +3,4 @@
 __pycache__/
 *.pyc
 beenbag_2025-08-14.dump
+editdb.py

@@ -188,7 +188,7 @@ class Admin(commands.Cog):
                     await ctx.send("❌ Invalid prefix. Using default `bc!`.")
 
             # 2) Spawn channels
-            await ctx.send("**2/7** Mention the **channels for mob spawns** (space/comma separated), or type `none` to skip:")
+            await ctx.send("**2/7** Mention the **channels for mob spawns** (space/comma separated), or type `none` to skip. Its reccomended to have a cooldown of about 2 seconds in these channels:")
             msg = await self.bot.wait_for("message", check=check)
             spawn_channels = parse_channel_ids_any(self.bot, msg) if msg.content.strip().lower() != "none" else []
 

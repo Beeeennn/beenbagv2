@@ -5,7 +5,7 @@ from utils.prefixes import get_cached_prefix
 from utils.game_helpers import gain_exp,ensure_player,sucsac,lb_inc
 from tasks.spawns import start_all_guild_spawn_tasks, start_guild_spawn_task, stop_guild_spawn_task
 from tasks.fish_food import give_fish_food_task
-from services import achievements
+from services import achievements,barn
 from datetime import datetime, timezone
 import random
 from constants import MOBS,RARITIES,COLOR_MAP
@@ -25,6 +25,8 @@ class Events(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
+        print(f"✅ Logged in as {self.bot.user} ({self.bot.user.id})")
+        #await self.bot.change_presence(activity=discord.Game("DEV: local build"))
         # achievements schema first (safe re-run)
         from services import achievements
         await achievements.ensure_schema(self.bot.db_pool)
@@ -164,6 +166,7 @@ class Events(commands.Cog):
                 # 1) Add to the barn (or sacrifice if full)
                 #    First ensure the player/barn rows exist:
                 await ensure_player(conn,message.author.id,guild_id)
+                await barn.ensure_player_and_barn(conn,message.author.id,guild_id)
                 await lb_inc(conn,"mobs_caught",message.author.id,guild_id,+1)
                 await conn.execute(
                     "INSERT INTO barn_upgrades (user_id,guild_id) VALUES ($1,$2) ON CONFLICT DO NOTHING;",
@@ -175,7 +178,7 @@ class Events(commands.Cog):
                     message.author.id,guild_id
                 )
                 size = await conn.fetchval(
-                    "SELECT barn_size FROM new_players WHERE user_id = $1 AND guild_id = $2",
+                    "SELECT barn_size FROM new_players_guild  WHERE user_id = $1 AND guild_id = $2",
                     message.author.id,guild_id
                 )
                     
@@ -193,10 +196,10 @@ class Events(commands.Cog):
                     # insert into barn with the golden flag
                     await conn.execute(
                         """
-                        INSERT INTO barn (user_id, guild_id, mob_name, is_golden, count)
-                        VALUES ($1, $4, $2, $3, 1)
-                        ON CONFLICT (user_id, mob_name, is_golden)
-                        DO UPDATE SET count = barn.count + 1
+                INSERT INTO barn (user_id, guild_id, mob_name, is_golden, count)
+                VALUES ($1, $4, $2, $3, 1)
+                ON CONFLICT (user_id, guild_id, mob_name, is_golden)
+                DO UPDATE SET count = barn.count + 1
                         """,
                         message.author.id, mob_name, is_golden, guild_id
                     )

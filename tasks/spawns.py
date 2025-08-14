@@ -1,6 +1,6 @@
 # tasks/spawns.py
 import asyncio, random, io
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from PIL import Image
 import discord
 from constants import MOBS, NOT_SPAWN_MOBS, RARITIES, COLOR_MAP
@@ -57,7 +57,7 @@ async def spawn_loop_for_guild(bot, guild_id: int):
             await asyncio.sleep(10)
 async def watch_spawn_expiry(bot, spawn_id, channel_id, message_id, mob_name, expires_at):
     # Sleep until the exact expiry time
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     delay = (expires_at - now).total_seconds()
     if delay > 0:
         await asyncio.sleep(delay)
@@ -181,7 +181,8 @@ async def spawn_once_in_channel(bot, chan):
 
     # DB insert & expiry
     stay_seconds = RARITIES[MOBS[mob]["rarity"]]["stay"]
-    expires = datetime.utcnow() + timedelta(seconds=stay_seconds)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(seconds=stay_seconds)
 
     async with bot.db_pool.acquire() as conn:
         rec = await conn.fetchrow(
@@ -191,7 +192,7 @@ async def spawn_once_in_channel(bot, chan):
             VALUES ($1,$2,$3,$4,0,$5,$6)
             RETURNING spawn_id
             """,
-            chan.guild.id, chan.id, mob, msg.id, datetime.utcnow(), expires
+            chan.guild.id, chan.id, mob, msg.id, now, expires
         )
 
     # subsequent frames: replace the attachment, keep the same embed (it still points to attachment://spawn.png)

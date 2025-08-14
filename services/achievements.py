@@ -186,7 +186,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# ---- 2b) Schema + sync helpers ----
+# ---- 2b) Schema + migration helpers (per-guild unlocks) ----
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS achievement (
   id SERIAL PRIMARY KEY,
@@ -195,14 +195,18 @@ CREATE TABLE IF NOT EXISTS achievement (
   description TEXT NOT NULL,
   exp INT NOT NULL DEFAULT 0,
   hidden BOOLEAN NOT NULL DEFAULT FALSE,
-  repeatable BOOLEAN NOT NULL DEFAULT FALSE
+  repeatable BOOLEAN NOT NULL DEFAULT FALSE,
+  category TEXT NOT NULL DEFAULT 'General'
 );
+
+-- Per-guild ownership (note the guild_id here)
 CREATE TABLE IF NOT EXISTS user_achievement (
   user_id BIGINT NOT NULL,
+  guild_id BIGINT NOT NULL,
   achievement_id INT NOT NULL REFERENCES achievement(id) ON DELETE CASCADE,
   unlocked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   times_awarded INT NOT NULL DEFAULT 1,
-  PRIMARY KEY (user_id, achievement_id)
+  PRIMARY KEY (user_id, guild_id, achievement_id)
 );
 """
 
@@ -218,94 +222,98 @@ ON CONFLICT (key) DO UPDATE SET
   category = EXCLUDED.category;
 """
 
-# put near top of services/achievements.py
 CATEGORY_ORDER = ["Starter", "Early", "Challenging", "Random", "Extreme"]
 
-def _ordered_categories(cats: list[str]) -> list[str]:
+def _ordered_categories(cats: List[str]) -> List[str]:
     order_index = {name: i for i, name in enumerate(CATEGORY_ORDER)}
     BIG = 10**9
     return sorted(cats, key=lambda c: (order_index.get(c, BIG), c.lower()))
-# --- helpers to work with Context OR Message -------------------------------
-from typing import List  # at top with your other typing imports
 
-def _lines_to_embeds(title: str, lines: List[str], color: Color, author=None, icon_url=None) -> List[Embed]:
-    """
-    Split a long list of lines into multiple embeds safely (Discord ~6k hard cap;
-    stay well under by limiting description to ~3800 chars).
-    """
-    chunks: List[List[str]] = []
-    cur: List[str] = []
-    cur_len = 0
-    limit = 3800  # leave room for title/headers/footers
+# --- create / migrate to per-guild user_achievement ---
+async def ensure_schema(pool: asyncpg.Pool):
+    async with pool.acquire() as con:
+        # Create tables / new columns
+        await con.execute("""
+        CREATE TABLE IF NOT EXISTS achievement (
+          id SERIAL PRIMARY KEY,
+          key TEXT UNIQUE NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT NOT NULL,
+          exp INT NOT NULL DEFAULT 0,
+          hidden BOOLEAN NOT NULL DEFAULT FALSE,
+          repeatable BOOLEAN NOT NULL DEFAULT FALSE,
+          category TEXT NOT NULL DEFAULT 'General'
+        );
 
-    for line in lines:
-        ln = len(line) + 1
-        if cur_len + ln > limit:
-            chunks.append(cur)
-            cur, cur_len = [], 0
-        cur.append(line)
-        cur_len += ln
-    if cur:
-        chunks.append(cur)
+        CREATE TABLE IF NOT EXISTS user_achievement (
+          user_id BIGINT NOT NULL,
+          guild_id BIGINT NOT NULL,
+          achievement_id INT NOT NULL REFERENCES achievement(id) ON DELETE CASCADE,
+          unlocked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          times_awarded INT NOT NULL DEFAULT 1,
+          PRIMARY KEY (user_id, guild_id, achievement_id)
+        );
+        """)
 
-    embeds: List[Embed] = []
-    for i, chunk in enumerate(chunks, 1):
-        e = Embed(title=title, description="\n".join(chunk), color=color)
-        if author:
-            e.set_author(name=author, icon_url=icon_url)
-        if len(chunks) > 1:
-            e.set_footer(text=f"Page {i}/{len(chunks)}")
-        embeds.append(e)
-    return embeds
+        # Migrate from older schema (no guild_id / different PK)
+        await con.execute("ALTER TABLE user_achievement ADD COLUMN IF NOT EXISTS guild_id BIGINT;")
+        await con.execute("UPDATE user_achievement SET guild_id = 0 WHERE guild_id IS NULL;")
+        await con.execute("ALTER TABLE user_achievement ALTER COLUMN guild_id SET NOT NULL;")
 
-def render_achievements_embeds(user, owned: List[dict], not_owned: List[dict]) -> List[Embed]:
-    """
-    Build one or more embeds listing unlocked and locked (non-hidden) achievements.
-    Expects the shape returned by list_user_achievements().
-    """
-    # Unlocked
-    owned_lines: List[str] = []
-    for o in owned:
-        name = o["name"]
-        desc = o["description"]
-        exp  = o["exp"]
-        rpt  = f" ×{o['times_awarded']}" if o.get("repeatable") and o.get("times_awarded", 1) > 1 else ""
-        owned_lines.append(f"• **{name}**{rpt} — {desc} *(+{exp} EXP)*")
+        # Read the CURRENT primary key column list in order
+        current_pk_cols = await con.fetch("""
+            SELECT a.attname
+            FROM pg_index i
+            JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON TRUE
+            JOIN pg_attribute a
+              ON a.attrelid = i.indrelid
+             AND a.attnum   = k.attnum
+            WHERE i.indrelid = 'user_achievement'::regclass
+              AND i.indisprimary
+            ORDER BY k.ord;
+        """)
+        current_pk_cols = [r["attname"] for r in current_pk_cols]
 
-    # Locked (non-hidden already filtered by list_user_achievements)
-    locked_lines: List[str] = []
-    for n in not_owned:
-        name = n["name"]
-        desc = n["description"]
-        exp  = n["exp"]
-        locked_lines.append(f"• **{name}** — {desc} *(+{exp} EXP)*")
+        desired = ["user_id", "guild_id", "achievement_id"]
 
-    # Author icon (avoid depending on _safe_avatar)
-    icon_url = (
-        getattr(getattr(user, "display_avatar", None), "url", None)
-        or getattr(getattr(user, "avatar", None), "url", None)
-    )
+        if not current_pk_cols:
+            # No PK set — add the correct one.
+            await con.execute("""
+                ALTER TABLE user_achievement
+                ADD CONSTRAINT user_achievement_pkey
+                PRIMARY KEY (user_id, guild_id, achievement_id);
+            """)
+        elif current_pk_cols != desired:
+            # Drop whatever PK exists, then add the desired one.
+            pk_name = await con.fetchval("""
+                SELECT conname
+                FROM pg_constraint
+                WHERE conrelid = 'user_achievement'::regclass
+                  AND contype  = 'p'
+                LIMIT 1;
+            """)
+            if pk_name:
+                await con.execute(f'ALTER TABLE user_achievement DROP CONSTRAINT {pk_name};')
+            await con.execute("""
+                ALTER TABLE user_achievement
+                ADD CONSTRAINT user_achievement_pkey
+                PRIMARY KEY (user_id, guild_id, achievement_id);
+            """)
 
-    embeds: List[Embed] = []
-    if owned_lines:
-        embeds += _lines_to_embeds(
-            title=f"🏆 {user.display_name} — Unlocked ({len(owned)})",
-            lines=owned_lines,
-            color=Color.gold(),
-            author=user.display_name,
-            icon_url=icon_url,
-        )
-    if locked_lines:
-        embeds += _lines_to_embeds(
-            title=f"🔒 {user.display_name} — Locked ({len(not_owned)})",
-            lines=locked_lines,
-            color=Color.dark_grey(),
-            author=user.display_name,
-            icon_url=icon_url,
-        )
-    if not embeds:
-        embeds = [Embed(title="Achievements", description="No achievements defined yet.", color=Color.blurple())]
-    return embeds
+# keep master in sync (also ensures schema)
+async def sync_master(pool: asyncpg.Pool):
+    await ensure_schema(pool)
+    async with pool.acquire() as con:
+        async with con.transaction():
+            for k, v in ACHIEVEMENTS.items():
+                await con.execute(
+                    UPSERT_SQL,
+                    k, v["name"], v["description"], v["exp"],
+                    v.get("hidden", False), v.get("repeatable", False),
+                    v.get("category", "General"),
+                )
+
+# --- tiny embed helpers & send utils ---
 def _safe_avatar(user):
     try:
         return getattr(user.display_avatar, "url", None) or getattr(user.avatar, "url", None)
@@ -313,109 +321,72 @@ def _safe_avatar(user):
         return None
 
 async def _ctx_send(ctx_or_msg, **kwargs):
-    """Send using ctx.send(...) if available, else message.channel.send(...)."""
     send = getattr(ctx_or_msg, "send", None)
     if callable(send):
         return await send(**kwargs)
     ch = getattr(ctx_or_msg, "channel", None)
     if ch and hasattr(ch, "send"):
         return await ch.send(**kwargs)
-    # last resort (shouldn't happen)
     raise RuntimeError("No way to send message from the given context/message.")
 
 def _resolve_bot(ctx_or_msg) -> Optional[discord.Client]:
-    """Get a bot/client from Context or Message."""
-    bot = getattr(ctx_or_msg, "bot", None) or getattr(ctx_or_msg, "client", None)
-    if bot:
-        return bot
-    # Try to pull from guild/channel state
-    g = getattr(ctx_or_msg, "guild", None)
-    if g is not None:
-        st = getattr(g, "_state", None)
-        if st:
-            bot = getattr(st, "client", None)
-            if bot:
-                return bot
-            getter = getattr(st, "_get_client", None)
-            if callable(getter):
-                try:
-                    return getter()
-                except Exception:
-                    pass
-    ch = getattr(ctx_or_msg, "channel", None)
-    if ch is not None:
-        st = getattr(ch, "_state", None)
-        if st:
-            bot = getattr(st, "client", None)
-            if bot:
-                return bot
-    return None
+    return getattr(ctx_or_msg, "bot", None) or getattr(ctx_or_msg, "client", None)
 
-async def _send_unlock_embed(ctx_or_msg, *, key: str, name: str, description: str,
+async def _send_unlock_embed(ctx_or_msg, *, name: str, description: str,
                              exp: int, repeatable: bool, times_awarded: int):
-    trophy = "🏆"
-    title = f"{trophy} Achievement Unlocked!"
-    desc = f"**{name}**\n{description}"
-
-    author = getattr(ctx_or_msg, "author", None)
-    e = Embed(title=title, description=desc, color=Color.gold())
+    e = Embed(title="🏆 Achievement Unlocked!", description=f"**{name}**\n{description}", color=Color.gold())
     e.add_field(name="EXP", value=f"+{exp}", inline=True)
     if repeatable and times_awarded > 1:
         e.add_field(name="Times Awarded", value=f"×{times_awarded}", inline=True)
+    author = getattr(ctx_or_msg, "author", None)
     if author:
         e.set_author(name=getattr(author, "display_name", "You"), icon_url=_safe_avatar(author))
-    e.set_footer(text="use `achievement` to see more")
-
+    e.set_footer(text="Use `achievement` to see more")
     try:
         await _ctx_send(ctx_or_msg, embed=e)
     except Exception:
-        # never break gameplay if an embed fails
         try:
-            await _ctx_send(ctx_or_msg, content=f"{trophy} **Achievement Unlocked:** {name} (+{exp} EXP)")
+            await _ctx_send(ctx_or_msg, content=f"🏆 **Achievement Unlocked:** {name} (+{exp} EXP)")
         except Exception:
             pass
 
 # ---- EXP hand-off (works with Context OR Message) -------------------------
-
 async def _grant_exp(conn: asyncpg.Connection, ctx_or_msg, user_id: int, amount: int):
-    """Grant EXP using the same DB connection; resolves bot and guild from ctx/message."""
     gid = game_helpers.gid_from_ctx(ctx_or_msg)
     bot = _resolve_bot(ctx_or_msg)
-    # Pass the original message/context in as 'message' so your gain_exp can still use guild/member
     await game_helpers.gain_exp(conn, bot, user_id, amount, ctx_or_msg, gid)
-async def ensure_schema(pool: asyncpg.Pool):
-    async with pool.acquire() as con:
-        await con.execute(SCHEMA_SQL)
 
-async def sync_master(pool: asyncpg.Pool):
-    async with pool.acquire() as con:
-        async with con.transaction():
-            for k, v in ACHIEVEMENTS.items():
-                await con.execute(
-                    UPSERT_SQL,
-                    k, v["name"], v["description"], v["exp"], v.get("hidden", False), v.get("repeatable", False)
-                )
-
+# ---- core lookups (per-guild) ---------------------------------------------
 async def _get_achievement_row(con: asyncpg.Connection, key: str):
     return await con.fetchrow("SELECT * FROM achievement WHERE key = $1", key)
 
-async def _get_user_ach(con: asyncpg.Connection, user_id: int, ach_id: int):
+async def _get_user_ach(con: asyncpg.Connection, user_id: int, ach_id: int, guild_id: int):
     return await con.fetchrow(
-        "SELECT * FROM user_achievement WHERE user_id = $1 AND achievement_id = $2",
-        user_id, ach_id
+        """
+        SELECT * FROM user_achievement
+        WHERE user_id = $1 AND guild_id = $2 AND achievement_id = $3
+        """,
+        user_id, guild_id, ach_id
     )
 
+# ---- grant API (per-guild) ------------------------------------------------
 async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, notify: bool = True) -> Optional[int]:
     meta = ACHIEVEMENTS.get(key)
     if not meta:
         return None
+
+    guild_id = game_helpers.gid_from_ctx(ctx)
+    if guild_id is None:
+        # Only award achievements in servers
+        return 0
 
     async with pool.acquire() as con, con.transaction():
         ach = await _get_achievement_row(con, key)
         if not ach:
             await con.execute(
                 UPSERT_SQL, key, meta["name"], meta["description"], meta["exp"],
-                meta.get("hidden", False), meta.get("repeatable", False)
+                meta.get("hidden", False), meta.get("repeatable", False),
+                meta.get("category", "General"),
             )
             ach = await _get_achievement_row(con, key)
 
@@ -426,37 +397,37 @@ async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, notify: bool = 
         if is_repeat:
             row = await con.fetchrow(
                 """
-                INSERT INTO user_achievement (user_id, achievement_id, times_awarded)
-                VALUES ($1, $2, 1)
-                ON CONFLICT (user_id, achievement_id)
+                INSERT INTO user_achievement (user_id, guild_id, achievement_id, times_awarded)
+                VALUES ($1, $2, $3, 1)
+                ON CONFLICT (user_id, guild_id, achievement_id)
                 DO UPDATE SET times_awarded = user_achievement.times_awarded + 1,
                               unlocked_at   = NOW()
                 RETURNING times_awarded
                 """,
-                user_id, ach_id
+                user_id, guild_id, ach_id
             )
             await _grant_exp(con, ctx, user_id, exp)
             if notify:
                 await _send_unlock_embed(
-                    ctx, key=key, name=meta["name"], description=meta["description"],
+                    ctx, name=meta["name"], description=meta["description"],
                     exp=exp, repeatable=True, times_awarded=row["times_awarded"]
                 )
             return exp
         else:
             inserted = await con.fetchrow(
                 """
-                INSERT INTO user_achievement (user_id, achievement_id)
-                VALUES ($1, $2)
-                ON CONFLICT (user_id, achievement_id) DO NOTHING
+                INSERT INTO user_achievement (user_id, guild_id, achievement_id)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (user_id, guild_id, achievement_id) DO NOTHING
                 RETURNING 1
                 """,
-                user_id, ach_id
+                user_id, guild_id, ach_id
             )
             if inserted:
                 await _grant_exp(con, ctx, user_id, exp)
                 if notify:
                     await _send_unlock_embed(
-                        ctx, key=key, name=meta["name"], description=meta["description"],
+                        ctx, name=meta["name"], description=meta["description"],
                         exp=exp, repeatable=False, times_awarded=1
                     )
                 return exp
@@ -468,55 +439,34 @@ async def try_grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, *, notify: 
     return await grant(pool, ctx, user_id, key, notify=notify)
 
 async def try_grant_many(pool: asyncpg.Pool, ctx, user_id: int, keys: Iterable[str]) -> int:
-    """
-    Convenience: attempts several keys; returns total EXP granted.
-    """
     total = 0
     for k in keys:
         gained = await try_grant(pool, ctx, user_id, k) or 0
         total += gained
     return total
 
-# Update sync_master to pass category (default "General")
-async def sync_master(pool: asyncpg.Pool):
-    async with pool.acquire() as con:
-        async with con.transaction():
-            for k, v in ACHIEVEMENTS.items():
-                await con.execute(
-                    UPSERT_SQL,
-                    k,
-                    v["name"],
-                    v["description"],
-                    v["exp"],
-                    v.get("hidden", False),
-                    v.get("repeatable", False),
-                    v.get("category", "General"),
-                )
-
-# ------------------ fetch helpers for UI ------------------
-
+# ---- listing & UI (per-guild) ---------------------------------------------
 async def _fetch_categories(conn) -> List[str]:
     rows = await conn.fetch("SELECT DISTINCT category FROM achievement ORDER BY 1")
     return [r["category"] for r in rows] or ["General"]
 
-async def _fetch_category_rows(conn: asyncpg.Connection, category: str, user_id: int):
-    """Return raw rows for a category with a LEFT JOIN on ownership."""
-    rows = await conn.fetch(
+async def _fetch_category_rows(con: asyncpg.Connection, category: str, user_id: int, guild_id: int):
+    return await con.fetch(
         """
         SELECT a.key, a.name, a.description, a.exp, a.hidden, a.repeatable, a.category,
                ua.times_awarded, ua.unlocked_at
           FROM achievement a
           LEFT JOIN user_achievement ua
-            ON ua.achievement_id = a.id AND ua.user_id = $2
+            ON ua.achievement_id = a.id
+           AND ua.user_id = $2
+           AND ua.guild_id = $3
          WHERE a.category = $1
          ORDER BY a.name
         """,
-        category, user_id
+        category, user_id, guild_id
     )
-    return rows
 
 def _row_to_line(r) -> str:
-    """Format a single achievement row into a list line."""
     unlocked = r["times_awarded"] is not None
     if unlocked:
         rpt = ""
@@ -528,11 +478,6 @@ def _row_to_line(r) -> str:
 
 def _build_achievements_embed(ctx_or_msg, *, category: str, mode_locked: bool,
                               rows: List[asyncpg.Record], start: int) -> Embed:
-    """
-    mode_locked=False => show Unlocked
-    mode_locked=True  => show Locked (non-hidden only)
-    """
-    # Filter rows according to mode
     if mode_locked:
         filt = [r for r in rows if r["times_awarded"] is None and not r["hidden"]]
         title = f"🏆 Achievements — {category} — Locked"
@@ -563,26 +508,21 @@ def _build_achievements_embed(ctx_or_msg, *, category: str, mode_locked: bool,
             pass
     return e
 
-# ------------------ View (dropdown + arrows + locked/unlocked toggle) ------------------
-
 class AchievementsView(discord.ui.View):
-    def __init__(self, ctx, pool, user_id: int, initial_category: str, categories: List[str]):
+    def __init__(self, ctx, pool, user_id: int, guild_id: int, initial_category: str, categories: List[str]):
         super().__init__(timeout=120)
         self.ctx = ctx
         self.pool = pool
         self.user_id = user_id
+        self.guild_id = guild_id
         self.category = initial_category
         self.categories = categories[:]  # keep our own copy
-        self.mode_locked = False  # False = Unlocked, True = Locked
+        self.mode_locked = False
         self.start = 0
         self.cache: Dict[str, List[asyncpg.Record]] = {}
-
-        # set initial options
         self._refresh_select_options()
 
-    # --- helpers ---
     def _refresh_select_options(self):
-        # rebuild options so the current selection is visually sticky
         self.category_select.options = [
             discord.SelectOption(label=c, value=c, default=(c == self.category))
             for c in self.categories
@@ -591,22 +531,20 @@ class AchievementsView(discord.ui.View):
     async def _load(self):
         async with self.pool.acquire() as con:
             if self.category not in self.cache:
-                self.cache[self.category] = await _fetch_category_rows(con, self.category, self.user_id)
+                self.cache[self.category] = await _fetch_category_rows(
+                    con, self.category, self.user_id, self.guild_id
+                )
 
     async def _render(self, interaction: Interaction | None = None):
         await self._load()
-
-        # refresh select defaults every render
         self._refresh_select_options()
-
         rows = self.cache.get(self.category, [])
-        # figure out total after filtering by locked/unlocked
+
         if self.mode_locked:
             total = len([r for r in rows if r["times_awarded"] is None and not r["hidden"]])
         else:
             total = len([r for r in rows if r["times_awarded"] is not None])
 
-        # clamp paging + button states
         self.start = max(0, min(self.start, max(0, total - 1)))
         self.prev_button.disabled = (self.start <= 0)
         self.next_button.disabled = (self.start + 10 >= total)
@@ -647,15 +585,17 @@ class AchievementsView(discord.ui.View):
         self.start = self.start + 10
         await self._render(interaction)
 
-# ------------------ Public opener ------------------
-
+# Public opener (per-guild)
 async def open_achievements_menu(pool: asyncpg.Pool, ctx, user_id: int):
     await ensure_schema(pool)
     async with pool.acquire() as con:
         cats = await _fetch_categories(con)
-
-    cats = _ordered_categories(cats)           # ← apply your preferred order
+    cats = _ordered_categories(cats)
     initial = cats[0] if cats else "General"
 
-    view = AchievementsView(ctx, pool, user_id, initial, cats)
+    guild_id = game_helpers.gid_from_ctx(ctx)
+    if guild_id is None:
+        return await ctx.send("Achievements are only available in servers.")
+
+    view = AchievementsView(ctx, pool, user_id, guild_id, initial, cats)
     await view._render()

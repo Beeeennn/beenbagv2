@@ -186,7 +186,7 @@ def get_level_from_exp(exp: int) -> int:
 async def gain_exp(conn, bot, user_id: int, exp_gain: int, message=None, guild_id: int=None):
     if guild_id is None:
         guild_id = message.guild.id if message and message.guild else None
-
+    await ensure_account(conn,user_id, guild_id)
     old_exp = await conn.fetchval("""
         SELECT experience FROM accountinfo
          WHERE guild_id = $1 AND discord_id = $2
@@ -255,7 +255,14 @@ async def gain_exp(conn, bot, user_id: int, exp_gain: int, message=None, guild_i
         await announce_ch.send(text)
     elif message:
         await message.channel.send(text)
-        
+# utils/game_helpers.py
+async def ensure_account(conn, user_id: int, guild_id: int):
+    await conn.execute("""
+        INSERT INTO accountinfo (guild_id, discord_id, experience, overallexp)
+        VALUES ($1, $2, 0, 0)
+        ON CONFLICT (guild_id, discord_id) DO NOTHING
+    """, guild_id, user_id)
+
 async def lb_inc(conn, leaderboard_name: str, user_id: int, guild_id: int | None, amount: int):
     """
     Increment a leaderboard counter.
@@ -285,51 +292,53 @@ async def ensure_player(conn, user_id, guild_id: int):
             guild_id,user_id
         )
 
-async def take_items(user_id: int, item: str, amount: int,conn, guild_id:int):
-    # Check current quantity
-    row = await conn.fetchrow("""
-        SELECT quantity FROM player_items
-        WHERE guild_id = $1 AND player_id = $2 AND item_name = $3
-    """, guild_id, user_id, item)
+async def take_items(user_id: int, item: str, amount: int, conn, guild_id: int):
+    """
+    Atomically subtract items; error if not enough. Deletes the row when it hits 0.
+    """
+    if amount <= 0:
+        return
+    rec = await conn.fetchrow(
+        """
+        UPDATE player_items
+           SET quantity = quantity - $3
+         WHERE guild_id = $1 AND player_id = $2 AND item_name = $4 AND quantity >= $3
+     RETURNING quantity
+        """,
+        guild_id, user_id, amount, item
+    )
+    if not rec:
+        # Not enough; fetch current to report a good error
+        have = await conn.fetchval(
+            "SELECT quantity FROM player_items WHERE guild_id=$1 AND player_id=$2 AND item_name=$3",
+            guild_id, user_id, item
+        ) or 0
+        raise ValueError(f"User {user_id} does not have enough of '{item}' (has {have})")
 
-    if not row or row["quantity"] < amount:
-        raise ValueError(f"User {user_id} does not have enough of '{item}' (has {row['quantity'] if row else 0})")
+    # Clean up zero rows
+    if rec["quantity"] == 0:
+        await conn.execute(
+            "DELETE FROM player_items WHERE guild_id=$1 AND player_id=$2 AND item_name=$3 AND quantity <= 0",
+            guild_id, user_id, item
+        )
 
-    new_qty = row["quantity"] - amount
-
-    if new_qty > 0:
-        await conn.execute("""
-            UPDATE player_items
-            SET quantity = $1
-            WHERE guild_id = $2 AND player_id = $3 AND item_name = $4
-        """, new_qty, guild_id, user_id, item)
-    else:
-        await conn.execute("""
-            DELETE FROM player_items
-            WHERE guild_id = $1 AND player_id = $2 AND item_name = $3
-        """, guild_id, user_id, item)
-
-async def give_items(user_id: int, item: str, amount: int, cat, useable, conn, guild_id: int):
-    # Check if item already exists
-    row = await conn.fetchrow("""
-        SELECT quantity FROM player_items
-        WHERE guild_id = $1 AND player_id = $2 AND item_name = $3
-    """,guild_id, user_id, item)
-
-    if row:
-        new_qty = row["quantity"] + amount
-        await conn.execute("""
-            UPDATE player_items
-            SET quantity = $1
-            WHERE guild_id = $2 AND player_id = $3 AND item_name = $4
-        """, new_qty, guild_id, user_id, item)
-    else:
-        await conn.execute("""
-            INSERT INTO player_items (guild_id, player_id, item_name, category, quantity, useable)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        """, guild_id, user_id, item, cat, amount, useable)
+async def give_items(user_id: int, item: str, amount: int, cat: str, useable: bool, conn, guild_id: int):
+    """
+    Atomically add items, creating the row if missing.
+    """
+    if amount == 0:
+        return
+    await conn.execute(
+        """
+        INSERT INTO player_items (guild_id, player_id, item_name, category, quantity, useable)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (guild_id, player_id, item_name)
+        DO UPDATE SET quantity = player_items.quantity + EXCLUDED.quantity
+        """,
+        guild_id, user_id, item, cat, amount, useable
+    )
     if item == "emeralds":
-        await lb_inc(conn, "overall_emeralds",user_id,guild_id,amount)
+        await lb_inc(conn, "overall_emeralds", user_id, guild_id, amount)
 async def get_items(conn,user_id, item,guild_id:int):
 
     row = await conn.fetchrow("""

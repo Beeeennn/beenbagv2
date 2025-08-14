@@ -1,73 +1,89 @@
 from datetime import datetime, timedelta
 from constants import CRAFT_RECIPES, TIER_ORDER
 from utils.game_helpers import ensure_player, get_items, take_items, give_items, gid_from_ctx
-from services import achievements
+from services import achievements,barn
+
+# services/crafting.py
 
 async def craft(ctx, pool, tool: str, tier: str | None):
+    """
+    Craft a tool. Costs come from CRAFT_RECIPES.
+    Uses get_items() so missing rows -> 0, avoiding None comparisons.
+    """
+    from utils.game_helpers import gid_from_ctx, ensure_player, get_items, take_items, give_items
+    from services import achievements
+
     user_id = ctx.author.id
     guild_id = gid_from_ctx(ctx)
 
-    # Normalize
+    # Normalize tool name
     t = tool.replace(" ", "_").lower()
     if t in ("fishing_rod", "fishingrod", "fishing", "rod"):
         t = "fishing_rod"
 
+    # Special case: totem (no tier)
     if t == "totem":
         cost = 2
         async with pool.acquire() as conn:
             await ensure_player(conn, user_id, guild_id)
-            if await get_items(conn, user_id, "diamond", guild_id) < cost:
-                await ctx.send(f"❌ You need {cost} diamonds to craft that.")
-                return
+            await barn.ensure_player_and_barn(conn, user_id, guild_id)
+            diamonds = await get_items(conn, user_id, "diamond", guild_id)
+            if diamonds < cost:
+                return await ctx.send(f"❌ You need {cost} diamonds to craft that.")
             await give_items(user_id, "totem", 1, "items", False, conn, guild_id)
             await take_items(user_id, "diamond", cost, conn, guild_id)
-        await ctx.send("🔨 You crafted a **totem**. One extra life in a stronghold!")
-        return
+        return await ctx.send("🔨 You crafted a **totem**. One extra life in a stronghold!")
 
     if tier is None:
-        await ctx.send("❌ You must specify a tier for that tool.")
-        return
+        return await ctx.send("❌ You must specify a tier for that tool.")
 
     key = (t, tier.lower())
     if key not in CRAFT_RECIPES:
-        await ctx.send(f"❌ Invalid recipe. Try `{ctx.clean_prefix}craft pickaxe iron`.")
-        return
+        return await ctx.send(f"❌ Invalid recipe. Try `{ctx.clean_prefix}craft pickaxe iron`.")
 
     wood_cost, ore_cost, ore_col, uses = CRAFT_RECIPES[key]
 
     async with pool.acquire() as conn:
         await ensure_player(conn, user_id, guild_id)
-        row = await conn.fetchrow(
-            """SELECT
-                 MAX(CASE WHEN item_name = 'wood' THEN quantity ELSE 0 END) AS wood,
-                 MAX(CASE WHEN item_name = $2 THEN quantity ELSE 0 END) AS ore
-               FROM player_items
-               WHERE player_id=$1 AND guild_id=$3 AND item_name IN ('wood',$2)""",
-            user_id, ore_col, guild_id
-        )
-        wood_have, ore_have = row["wood"], row["ore"]
-        if wood_have < wood_cost or (ore_col and ore_have < ore_cost):
-            need = [f"**{wood_cost} wood**"]
-            if ore_col: need.append(f"**{ore_cost} {ore_col}**")
-            await ctx.send(f"❌ You need {' and '.join(need)} to craft that.")
-            return
+        await barn.ensure_player_and_barn(conn, user_id, guild_id)
 
+        # Robust counts (0 if user has none)
+        wood_have = await get_items(conn, user_id, "wood", guild_id)
+        ore_have  = await get_items(conn, user_id, ore_col, guild_id) if ore_col else 0
+
+        # Check affordability
+        need_bits = []
+        if wood_have < wood_cost:
+            need_bits.append(f"**{wood_cost} wood**")
+        if ore_col and ore_have < ore_cost:
+            need_bits.append(f"**{ore_cost} {ore_col}**")
+        if need_bits:
+            return await ctx.send(f"❌ You need {' and '.join(need_bits)} to craft that.")
+
+        # Deduct materials
         await take_items(user_id, "wood", wood_cost, conn, guild_id)
         if ore_col:
             await take_items(user_id, ore_col, ore_cost, conn, guild_id)
 
+        # Give/stack the tool
         await conn.execute(
-            """INSERT INTO tools (user_id, guild_id, tool_name, tier, uses_left)
-               VALUES ($1,$2,$3,$4,$5)
-               ON CONFLICT (user_id,guild_id,tool_name,tier)
-               DO UPDATE SET uses_left = tools.uses_left + EXCLUDED.uses_left""",
-            user_id, guild_id, t, tier, uses
+            """
+            INSERT INTO tools (user_id, guild_id, tool_name, tier, uses_left)
+            VALUES ($1,$2,$3,$4,$5)
+            ON CONFLICT (guild_id, user_id, tool_name, tier)
+            DO UPDATE SET uses_left = tools.uses_left + EXCLUDED.uses_left
+            """,
+            user_id, guild_id, t, tier.lower(), uses
         )
+
+    # Achievements
     if t == "pickaxe":
-        await achievements.try_grant(pool,ctx,user_id,"craft_pick")
-    if t == "hoe" and tier == "diamond":
-        await achievements.try_grant(pool,ctx,user_id,"dia_hoe")
-    await ctx.send(f"🔨 You crafted a **{tier.title()} {t.replace('_',' ').title()}** with {uses} uses!")
+        await achievements.try_grant(pool, ctx, user_id, "craft_pick")
+    if t == "hoe" and tier.lower() == "diamond":
+        await achievements.try_grant(pool, ctx, user_id, "dia_hoe")
+
+    await ctx.send(f"🔨 You crafted a **{tier.title()} {t.replace('_', ' ').title()}** with {uses} uses!")
+
 
 async def recipe(ctx, args):
     if not args:

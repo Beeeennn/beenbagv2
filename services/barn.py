@@ -130,7 +130,7 @@ async def breed(pool, ctx, mob: str):
     wheat = RARITIES[MOBS[key]["rarity"]]["wheat"]
     guild_id = gid_from_ctx(ctx)
     async with pool.acquire() as conn:
-        await ensure_player(conn, user_id,guild_id)
+        await ensure_player_and_barn(conn, user_id,guild_id)
 
         # 2) Check wheat balance
         wheat_have = await get_items(conn, user_id, "wheat",guild_id)
@@ -159,8 +159,8 @@ async def breed(pool, ctx, mob: str):
             user_id,guild_id
         )
         barn_size = await conn.fetchval(
-            "SELECT barn_size FROM new_players WHERE user_id = $1 AND guild_id = $2",
-            user_id,guild_id
+            "SELECT barn_size FROM new_players_guild WHERE user_id = $1 AND guild_id = $2",
+            user_id, guild_id
         )
         if occupancy >= barn_size:
             return await ctx.send(
@@ -195,9 +195,11 @@ async def give(pool, ctx, who: str, mob: str):
     g          = ctx.guild.id
 
     async with pool.acquire() as conn:
+        await ensure_player_and_barn(conn, giver_id, g, default_size=5)
+        await ensure_player_and_barn(conn, target_id, g, default_size=5)
         # Target barn capacity + current fill (per guild)
         row = await conn.fetchrow(
-            "SELECT barn_size FROM new_players WHERE guild_id=$1 AND user_id=$2",
+            "SELECT barn_size FROM new_players_guild WHERE guild_id=$1 AND user_id=$2",
             g, target_id
         )
         target_size = row["barn_size"] if row else 5
@@ -274,55 +276,57 @@ async def give(pool, ctx, who: str, mob: str):
 async def barn(pool, ctx, who: str = None):
     """Show your barn split by Golden vs. normal and by rarity."""
     # Resolve who → Member (or fallback to author)
-    
     if who is None:
         member = ctx.author
     else:
         member = await resolve_member(ctx, who)
         if member is None:
-            return await ctx.send("Member not found.")  # or "Member not found."
+            return await ctx.send("Member not found.")
 
-    # Now you’ve got a real Member with .id, .display_name, etc.
     user_id = member.id
     guild_id = gid_from_ctx(ctx)
-    # 1) Fetch barn entries
+
     async with pool.acquire() as conn:
+        await ensure_player_and_barn(conn,user_id,guild_id,5)
+        # Fetch barn size FIRST so it's available even if the barn is empty.
+        size_row = await conn.fetchrow(
+            "SELECT barn_size FROM new_players_guild WHERE user_id = $1 AND guild_id = $2",
+            user_id, guild_id
+        )
+        size = size_row["barn_size"] if size_row and size_row["barn_size"] is not None else 5
+
+        # 1) Fetch barn entries
         rows = await conn.fetch(
             """
             SELECT mob_name, is_golden, count
               FROM barn
-             WHERE user_id = $1 AND count > 0 AND guild_id = $2
+             WHERE user_id = $1 AND guild_id = $2 AND count > 0
              ORDER BY is_golden DESC, mob_name
             """,
-            user_id,guild_id
-        )
-        if not rows:
-            return await ctx.send(embed=discord.Embed(
-                title=f"{member.display_name}'s Barn (0/{size} slots)",
-                description="No mobs yet. Go catch some!",
-                color=discord.Color.green()
-            ))
-
-        # fetch barn size & next upgrade cost if you still want those
-        size_row = await conn.fetchrow(
-            "SELECT barn_size FROM new_players WHERE user_id = $1 AND guild_id = $2", user_id, guild_id
-        )
-        size = size_row["barn_size"] if size_row else 5
-
-        # 2) Organize by gold flag → rarity → list of (mob, count)
-        data = {True: {}, False: {}}
-        for r in rows:
-            g    = r["is_golden"]
-            name = r["mob_name"]
-            cnt  = r["count"]
-            rar  = MOBS[name]["rarity"]
-            data[g].setdefault(rar, []).append((name, cnt))
-
-        # 3) Build embed
-        occ = await conn.fetchval(
-            "SELECT COALESCE(SUM(count),0) FROM barn WHERE user_id=$1 AND guild_id=$2",
             user_id, guild_id
         )
+
+    # Occupancy can be computed from rows (they're already filtered to count>0)
+    occ = sum(r["count"] for r in rows) if rows else 0
+
+    # If empty, return a *valid* embed that uses `size`
+    if not rows:
+        return await ctx.send(embed=discord.Embed(
+            title=f"{member.display_name}'s Barn ({occ}/{size} slots)",
+            description="No mobs yet. Go catch some!",
+            color=discord.Color.green()
+        ).set_footer(text="Use !upbarn to expand your barn."))
+
+    # 2) Organize by gold flag → rarity → list of (mob, count)
+    data = {True: {}, False: {}}
+    for r in rows:
+        g    = r["is_golden"]
+        name = r["mob_name"]
+        cnt  = r["count"]
+        rar  = MOBS[name]["rarity"]  # assumes name exists in MOBS
+        data[g].setdefault(rar, []).append((name, cnt))
+
+    # 3) Build embed
     embed = discord.Embed(
         title=f"{member.display_name}'s Barn ({occ}/{size} slots)",
         color=discord.Color.green()
@@ -333,92 +337,82 @@ async def barn(pool, ctx, who: str = None):
         section = data[is_gold]
         if not section:
             return
-        # Section header
-        embed.add_field(name=header, value="​", inline=False)
+        # Section header spacer
+        embed.add_field(name=header, value="​", inline=False)  # zero-width space
         # For each rarity in ascending order
         for rar in sorted(section):
             info = RARITIES[rar]
-            # e.g. “Common [1]”
             field_name = f"{info['name'].title()} [{rar}]"
-            lines = [
-                f"• **{n}** × {c}"
-                for n, c in section[rar]
-            ]
-            embed.add_field(
-                name=field_name,
-                value="\n".join(lines),
-                inline=False
-            )
+            lines = [f"• **{n}** × {c}" for n, c in section[rar]]
+            embed.add_field(name=field_name, value="\n".join(lines), inline=False)
 
     # 4) Golden first, then normal
     add_section(True,  "✨ Golden Mobs ✨")
     add_section(False, "Mobs")
 
     await ctx.send(embed=embed)
-
+async def ensure_player_and_barn(conn, user_id: int, guild_id: int, default_size: int = 5):
+    await conn.execute("""
+        INSERT INTO new_players_guild (user_id, guild_id, barn_size)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (user_id, guild_id) DO NOTHING
+    """, user_id, guild_id, default_size)
 async def upbarn(pool, ctx):
-    """Upgrades your barn by +1 slot, costing (upgrades + 1) wood."""
+    """Upgrades your barn by +1 slot, costing (upgrades + 1) * 3 wood."""
     user_id = ctx.author.id
     guild_id = gid_from_ctx(ctx)
+
     async with pool.acquire() as conn:
-        await ensure_player(conn,user_id,guild_id)
-        # 2) Ensure barn_upgrades row exists
-        await conn.execute(
-            "INSERT INTO barn_upgrades (user_id, guild_id) VALUES ($1,$2) ON CONFLICT DO NOTHING;",
-            user_id,guild_id
-        )
+        # Always ensure global + per-guild rows exist, with default barn size 5
+        await ensure_player_and_barn(conn, user_id, guild_id, default_size=5)
 
-        # 3) Get how many times they’ve upgraded
-        up = await conn.fetchrow(
-            "SELECT times_upgraded FROM barn_upgrades WHERE user_id = $1 AND guild_id = $2",
-            user_id,guild_id
-        )
-        times_upgraded = up["times_upgraded"]
+        # Ensure a barn_upgrades row exists and RETURN the current value
+        up = await conn.fetchrow("""
+            INSERT INTO barn_upgrades (user_id, guild_id, times_upgraded)
+            VALUES ($1, $2, 0)
+            ON CONFLICT (user_id, guild_id)
+            DO UPDATE SET times_upgraded = barn_upgrades.times_upgraded
+            RETURNING times_upgraded
+        """, user_id, guild_id)
+        times_upgraded = up["times_upgraded"]  # guaranteed row
 
-        # 4) Compute next upgrade cost
         next_cost = (times_upgraded + 1) * 3
 
-        # 5) Check they have enough wood
+        # Read current barn size from the new per-guild table
         pl = await conn.fetchrow(
-            "SELECT barn_size FROM new_players WHERE user_id = $1 AND guild_id = $2",
-            user_id,guild_id
+            "SELECT barn_size FROM new_players_guild WHERE user_id=$1 AND guild_id=$2",
+            user_id, guild_id
         )
-        current_size = pl["barn_size"]
+        current_size = pl["barn_size"] if pl and pl["barn_size"] is not None else 5
 
-        player_wood = await get_items(conn, user_id, "wood",guild_id)
-
+        player_wood = await get_items(conn, user_id, "wood", guild_id)
         if player_wood < next_cost:
             return await ctx.send(
                 f"{ctx.author.mention} you need **{next_cost} wood** to upgrade your barn, "
                 f"but you only have **{player_wood} wood**."
             )
 
-        # 6) Perform the upgrade
+        # Perform the upgrade: pay wood, bump counter, bump barn size
         await achievements.try_grant(pool, ctx, user_id, "upbarn")
-        await take_items(user_id,"wood",next_cost,conn,guild_id)
+        await take_items(user_id, "wood", next_cost, conn, guild_id)
+
         await conn.execute(
-            """
-            UPDATE barn_upgrades
-               SET times_upgraded = times_upgraded + 1
-             WHERE user_id = $1 AND guild_id = $2
-            """,
-            user_id,guild_id
+            "UPDATE barn_upgrades SET times_upgraded = times_upgraded + 1 WHERE user_id=$1 AND guild_id=$2",
+            user_id, guild_id
+        )
+        await conn.execute(
+            "UPDATE new_players_guild SET barn_size = barn_size + 1 WHERE user_id=$1 AND guild_id=$2",
+            user_id, guild_id
         )
 
-        await conn.fetchrow(
-            "UPDATE new_players SET barn_size = barn_size+1 WHERE user_id = $1 AND guild_id=$2",
-            user_id,guild_id
-        )
-        # 7) Fetch post‐upgrade values
+        # Post-upgrade values
         row = await conn.fetchrow(
-            "SELECT barn_size FROM new_players WHERE user_id = $1 AND guild_id = $2",
-            user_id,guild_id
+            "SELECT barn_size FROM new_players_guild WHERE user_id=$1 AND guild_id=$2",
+            user_id, guild_id
         )
-
-        new_wood = await get_items(conn, user_id, "wood",guild_id)
         new_size = row["barn_size"]
+        new_wood = await get_items(conn, user_id, "wood", guild_id)
 
-    # 8) Report back
     await ctx.send(
         f"{ctx.author.mention} upgraded their barn from **{current_size}** to **{new_size}** slots "
         f"for 🌳 **{next_cost} wood**! You now have **{new_wood} wood**."
