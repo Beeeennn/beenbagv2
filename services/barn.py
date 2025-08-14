@@ -1,6 +1,7 @@
 import discord
 from constants import MOBS, RARITIES
 from utils.game_helpers import take_items,gid_from_ctx,get_items,resolve_member,sucsac,ensure_player,give_mob
+from services import achievements
 
 
 async def sac(pool, ctx, mob_name: str):
@@ -45,6 +46,8 @@ async def sac(pool, ctx, mob_name: str):
             return await ctx.send(f"❌ You have no **{key}** to sacrifice.")
         have     = rec["count"]
         is_gold  = rec["is_golden"]
+        if not MOBS[key]["hostile"]:
+            await achievements.try_grant(pool, ctx, user_id, "sac")
         if have > 1:
             await conn.execute(
                 "UPDATE barn SET count = count - 1 WHERE user_id=$1 AND guild_id = $2 AND mob_name=$3",
@@ -164,6 +167,7 @@ async def breed(pool, ctx, mob: str):
                 f"❌ Your barn is full (**{occupancy}/{barn_size}**). Upgrade it before breeding more mobs!"
             )
 
+        await achievements.try_grant(pool, ctx, user_id, "first_breed")
         # 5) Deduct wheat and breed
         await take_items(user_id, "wheat", wheat, conn,guild_id)
         new_count = await give_mob(conn, user_id, key,guild_id)
@@ -248,9 +252,12 @@ async def give(pool, ctx, who: str, mob: str):
                 """,
                 g, target_id, mob_name, is_golden
             )
+            if MOBS[mob_name]["rarity"] == 5:
+                await achievements.try_grant(pool, ctx, giver_id, "gift_leg")
             return await ctx.send(
                 f"✅ You gave {'✨ ' if is_golden else ''}**{mob_name}** to {member.mention}!"
             )
+        
 
         # Else, sacrifice it for emeralds to the **giver**
         rarity = MOBS[mob_name]["rarity"]
@@ -387,6 +394,7 @@ async def upbarn(pool, ctx):
             )
 
         # 6) Perform the upgrade
+        await achievements.try_grant(pool, ctx, user_id, "upbarn")
         await take_items(user_id,"wood",next_cost,conn,guild_id)
         await conn.execute(
             """

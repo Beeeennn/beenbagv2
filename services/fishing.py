@@ -6,6 +6,7 @@ import discord
 import io
 from PIL import Image, ImageOps
 import os
+from services import achievements
 def tint_image(image: Image.Image, tint: tuple[int, int, int]) -> Image.Image:
     """Tint grayscale-ish sprites while keeping alpha."""
     img = image.convert("RGBA")
@@ -79,6 +80,7 @@ async def make_fish(pool, ctx,fish_path: str):
                 """,
                 user_id,guild_id,color_names[0],color_names[1],typef
             )
+            await achievements.try_grant(pool,ctx,user_id,"first_fish")
         else:
             return await ctx.send("You caught a sea pickle, yuck!!! you throw it back in the ocean")
             
@@ -149,6 +151,10 @@ async def generate_aquarium(pool, ctx, who):
     food = len(unique_color1) + len(unique_color2) + len(unique_types)
     if len(fish_specs) > 30:
         raise ValueError("You can only place up to 30 fish.")
+    elif len(fish_specs) == 30:
+        achievements.try_grant(pool,ctx,user_id,"full_aquarium")
+    if food == 38:
+        achievements.try_grant(pool,ctx,user_id,"full_food")
     aquarium = Image.open(background_path).convert("RGBA")
     width, height = aquarium.size
     fish_size = 12

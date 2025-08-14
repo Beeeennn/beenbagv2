@@ -54,6 +54,7 @@ def gid_from_ctx(ctx) -> int:
     return ctx.guild.id if ctx and ctx.guild else None
 
 async def sucsac(ctx:commands.Context, user, mob_name: str, is_gold: bool, note: str, conn):
+    from services import achievements
     """
     gives the correct reward for a mob and all of its emeralds
     """
@@ -88,6 +89,8 @@ async def sucsac(ctx:commands.Context, user, mob_name: str, is_gold: bool, note:
     if is_gold:
         reward*=2
     num = SWORDS[best_tier]
+    if best_tier == "diamond" and mob_name.lower() == "chicken":
+        await achievements.try_grant(ctx.bot.db_pool, ctx, user_id, "mob_catch")
     reward += num
     await conn.execute(
         """

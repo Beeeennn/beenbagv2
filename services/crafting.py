@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from constants import CRAFT_RECIPES, TIER_ORDER
 from utils.game_helpers import ensure_player, get_items, take_items, give_items, gid_from_ctx
+from services import achievements
 
 async def craft(ctx, pool, tool: str, tier: str | None):
     user_id = ctx.author.id
@@ -62,7 +63,10 @@ async def craft(ctx, pool, tool: str, tier: str | None):
                DO UPDATE SET uses_left = tools.uses_left + EXCLUDED.uses_left""",
             user_id, guild_id, t, tier, uses
         )
-
+    if t == "pickaxe":
+        await achievements.try_grant(pool,ctx,user_id,"craft_pick")
+    if t == "hoe" and tier == "diamond":
+        await achievements.try_grant(pool,ctx,user_id,"dia_hoe")
     await ctx.send(f"🔨 You crafted a **{tier.title()} {t.replace('_',' ').title()}** with {uses} uses!")
 
 async def recipe(ctx, args):

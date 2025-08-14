@@ -1,5 +1,5 @@
 from discord.ext import commands
-from services import crafting, shop, activities, inventory, fishing, barn, progression, yt_link, minigames
+from services import crafting, shop, activities, inventory, fishing, barn, progression, yt_link, minigames,achievements
 from utils.parsing import parse_item_and_qty, _norm_item_from_args
 from constants import BLOCKED_SHOP_ITEMS
 
@@ -7,6 +7,35 @@ class Game(commands.Cog):
     def __init__(self, bot):
         self.bot = bot  # expects bot.db_pool to be set elsewhere
 
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        # Ensure tables + sync registry when the bot boots
+        await achievements.ensure_schema(self.bot.db_pool)
+        await achievements.sync_master(self.bot.db_pool)
+
+    @commands.command(name="achievements", aliases=["achs", "ach"])
+    async def achievements_cmd(self, ctx, *, who: str = None):
+        user = ctx.author if not who else (ctx.message.mentions[0] if ctx.message.mentions else ctx.author)
+        owned, not_owned = await achievements.list_user_achievements(self.bot.db_pool, user.id)
+
+        if not owned and not not_owned:
+            return await ctx.send("No achievements defined yet.")
+
+        lines = []
+        if owned:
+            lines.append(f"🏆 **{user.display_name} — Unlocked ({len(owned)})**")
+            for o in owned:
+                times = f" ×{o['times_awarded']}" if o.get("repeatable") and o["times_awarded"] > 1 else ""
+                lines.append(f"• **{o['name']}**{times} — {o['description']} *(+{o['exp']} EXP)*")
+        if not_owned:
+            lines.append("")
+            lines.append(f"🔒 **Locked ({len(not_owned)})**")
+            for n in not_owned:
+                lines.append(f"• **{n['name']}** — {n['description']} *(+{n['exp']} EXP)*")
+
+        # Discord has message length limits; chunk if you expect a lot
+        await ctx.send("\n".join(lines[:1900]))
     # ---------- Crafting ----------
     @commands.command(name="craft")
     async def craft_cmd(self, ctx, *args):

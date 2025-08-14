@@ -1,6 +1,7 @@
 from utils.game_helpers import gid_from_ctx,ensure_player,give_items,get_items,lb_inc
 import discord
 from constants import TIER_ORDER, DROP_TABLES, WHEAT_DROP, AXEWOOD
+from services import achievements
 import asyncio
 import random
 async def farm(pool, ctx):
@@ -78,7 +79,7 @@ async def farm(pool, ctx):
     for frame in frames[1:]:
         await asyncio.sleep(0.5)
         await msg.edit(content=f"{ctx.author.mention} {frame}")
-
+    await achievements.try_grant(pool,ctx,user_id,"first_farm")
     # --- 3) Show the result ---
     await asyncio.sleep(0.5)
     await msg.edit(content=result)
@@ -127,6 +128,9 @@ async def chop(pool, ctx):
         # fetch the updated wood count
         wood = await get_items(conn,user_id,"wood",guild_id)
         lb_inc(conn,"wood_collected",user_id,guild_id,num)
+        await achievements.try_grant(pool,ctx,user_id,"first_chop")
+        if wood >= 20:
+            await achievements.try_grant(pool,ctx,user_id,"20_wood")
     await ctx.send(
         f"{ctx.author.mention} swung their axe and chopped 🌳 **{num} wood**! "
         f"You now have **{wood}** wood."
@@ -218,7 +222,9 @@ async def mine(pool, ctx):
         f"{ctx.author.mention} mined with a **{best_tier.title()} Pickaxe** and found "
         f"{emoji} **{amount} {chosen_ore}**! You now have **{total} {chosen_ore}**."
     )
-
+    if best_tier == "wood" and chosen_ore == "diamond":
+        await achievements.try_grant(pool,ctx,user_id,"dia_with_wood")
+    await achievements.try_grant(pool,ctx,user_id,"first_mine")
     # --- Play the GIF animation from assets/mining/<best_pick>/<drop>.gif ---
     def gif_path_for(bt: str, dr: str) -> Path:
         base = Path("assets/gifs/mining")
