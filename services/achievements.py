@@ -78,7 +78,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 20,
         "hidden": False,
         "repeatable": False,
-        "category":"Challanging",
+        "category":"Challenging",
     },
     "20_wood": {
         "name": "Lumberjack",
@@ -217,6 +217,14 @@ ON CONFLICT (key) DO UPDATE SET
   repeatable = EXCLUDED.repeatable,
   category = EXCLUDED.category;
 """
+
+# put near top of services/achievements.py
+CATEGORY_ORDER = ["Starter", "Early", "Challenging", "Random", "Extreme"]
+
+def _ordered_categories(cats: list[str]) -> list[str]:
+    order_index = {name: i for i, name in enumerate(CATEGORY_ORDER)}
+    BIG = 10**9
+    return sorted(cats, key=lambda c: (order_index.get(c, BIG), c.lower()))
 # --- helpers to work with Context OR Message -------------------------------
 from typing import List  # at top with your other typing imports
 
@@ -356,7 +364,7 @@ async def _send_unlock_embed(ctx_or_msg, *, key: str, name: str, description: st
         e.add_field(name="Times Awarded", value=f"×{times_awarded}", inline=True)
     if author:
         e.set_author(name=getattr(author, "display_name", "You"), icon_url=_safe_avatar(author))
-    e.set_footer(text=key)
+    e.set_footer(text="use `achievement` to see more")
 
     try:
         await _ctx_send(ctx_or_msg, embed=e)
@@ -564,14 +572,20 @@ class AchievementsView(discord.ui.View):
         self.pool = pool
         self.user_id = user_id
         self.category = initial_category
-        self.categories = categories
-        self.mode_locked = False  # False = show unlocked; True = show locked
+        self.categories = categories[:]  # keep our own copy
+        self.mode_locked = False  # False = Unlocked, True = Locked
         self.start = 0
-        self.cache: Dict[str, List[asyncpg.Record]] = {}  # raw rows per category
+        self.cache: Dict[str, List[asyncpg.Record]] = {}
 
-        # Populate the select options
+        # set initial options
+        self._refresh_select_options()
+
+    # --- helpers ---
+    def _refresh_select_options(self):
+        # rebuild options so the current selection is visually sticky
         self.category_select.options = [
-            discord.SelectOption(label=c, value=c, default=(c == self.category)) for c in categories
+            discord.SelectOption(label=c, value=c, default=(c == self.category))
+            for c in self.categories
         ]
 
     async def _load(self):
@@ -581,34 +595,39 @@ class AchievementsView(discord.ui.View):
 
     async def _render(self, interaction: Interaction | None = None):
         await self._load()
+
+        # refresh select defaults every render
+        self._refresh_select_options()
+
         rows = self.cache.get(self.category, [])
-        # determine total after filter to set button states
+        # figure out total after filtering by locked/unlocked
         if self.mode_locked:
             total = len([r for r in rows if r["times_awarded"] is None and not r["hidden"]])
         else:
             total = len([r for r in rows if r["times_awarded"] is not None])
 
-        # button states
+        # clamp paging + button states
+        self.start = max(0, min(self.start, max(0, total - 1)))
         self.prev_button.disabled = (self.start <= 0)
         self.next_button.disabled = (self.start + 10 >= total)
         self.toggle_button.label = "Show Locked" if not self.mode_locked else "Show Unlocked"
         self.toggle_button.style = ButtonStyle.primary if self.mode_locked else ButtonStyle.secondary
 
-        embed = _build_achievements_embed(self.ctx, category=self.category, mode_locked=self.mode_locked,
-                                          rows=rows, start=self.start)
+        embed = _build_achievements_embed(
+            self.ctx, category=self.category, mode_locked=self.mode_locked,
+            rows=rows, start=self.start
+        )
         if interaction:
             await interaction.response.edit_message(embed=embed, view=self)
         else:
             await self.ctx.send(embed=embed, view=self)
 
     async def interaction_check(self, interaction: Interaction) -> bool:
-        # Only the invoker can use this view
         return interaction.user.id == self.ctx.author.id
 
     @discord.ui.select(placeholder="Select a category…", min_values=1, max_values=1, row=0)
     async def category_select(self, interaction: Interaction, select: discord.ui.Select):
         self.category = select.values[0]
-        # reset paging when switching category
         self.start = 0
         await self._render(interaction)
 
@@ -631,11 +650,12 @@ class AchievementsView(discord.ui.View):
 # ------------------ Public opener ------------------
 
 async def open_achievements_menu(pool: asyncpg.Pool, ctx, user_id: int):
-    """Send the interactive Achievements menu for this user."""
-    # Ensure the schema has category column
     await ensure_schema(pool)
-
     async with pool.acquire() as con:
         cats = await _fetch_categories(con)
-    view = AchievementsView(ctx, pool, user_id, cats[0], cats)
+
+    cats = _ordered_categories(cats)           # ← apply your preferred order
+    initial = cats[0] if cats else "General"
+
+    view = AchievementsView(ctx, pool, user_id, initial, cats)
     await view._render()
