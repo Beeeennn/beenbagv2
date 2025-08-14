@@ -50,7 +50,7 @@ class Game(commands.Cog):
     async def shop_cmd(self, ctx):
         # choose ONE: either shop.show(...) or shop.shop(...)
         # Here assuming services.shop.show(ctx, pool)
-        await shop.shop(ctx, self.bot.db_pool)
+        await shop.shop(self.bot.db_pool,ctx)
 
     @commands.command(name="buy")
     async def buy(self, ctx, *args):
