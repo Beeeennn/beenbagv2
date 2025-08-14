@@ -127,7 +127,7 @@ async def chop(pool, ctx):
         )
         # fetch the updated wood count
         wood = await get_items(conn,user_id,"wood",guild_id)
-        lb_inc(conn,"wood_collected",user_id,guild_id,num)
+        await lb_inc(conn,"wood_collected",user_id,guild_id,num)
         await achievements.try_grant(pool,ctx,user_id,"first_chop")
         if wood >= 20:
             await achievements.try_grant(pool,ctx,user_id,"20_wood")
@@ -215,16 +215,37 @@ async def mine(pool, ctx):
         # fetch new total
         total = await get_items(conn, user_id, chosen_ore, guild_id)
 
-    # Prepare the final result text
+    # Emojis + color helpers
     emojis = {"cobblestone": "🪨", "iron": "🔩", "gold": "🪙", "diamond": "💎"}
     emoji = emojis.get(chosen_ore, "⛏️")
-    result = (
-        f"{ctx.author.mention} mined with a **{best_tier.title()} Pickaxe** and found "
-        f"{emoji} **{amount} {chosen_ore}**! You now have **{total} {chosen_ore}**."
-    )
+    tier_colors = {
+        "wood": 0x8B5A2B,
+        "stone": 0x808080,
+        "iron": 0xC0C0C0,
+        "gold": 0xFFD700,
+        "diamond": 0x00FFFF
+    }
+    color = tier_colors.get(best_tier, 0x5865F2)  # fallback to blurple
+
+    # Grant achievements
     if best_tier == "wood" and chosen_ore == "diamond":
-        await achievements.try_grant(pool,ctx,user_id,"dia_with_wood")
-    await achievements.try_grant(pool,ctx,user_id,"first_mine")
+        await achievements.try_grant(pool, ctx, user_id, "dia_with_wood")
+    await achievements.try_grant(pool, ctx, user_id, "first_mine")
+
+    # Build the final result embed
+    def build_result_embed() -> discord.Embed:
+        e = discord.Embed(
+            title="⛏️ Mining Result",
+            description=f"{ctx.author.mention} mined with a **{best_tier.title()} Pickaxe**!",
+            color=color
+        )
+        e.add_field(name="Drop", value=f"{emoji} **{chosen_ore}**", inline=True)
+        e.add_field(name="Amount", value=f"**{amount}**", inline=True)
+        e.add_field(name="Total Owned", value=f"**{total} {chosen_ore}**", inline=True)
+        if broke:
+            e.set_footer(text="Your pickaxe broke!")
+        return e
+
     # --- Play the GIF animation from assets/mining/<best_pick>/<drop>.gif ---
     def gif_path_for(bt: str, dr: str) -> Path:
         base = Path("assets/gifs/mining")
@@ -232,7 +253,6 @@ async def mine(pool, ctx):
         dr = (dr or "default").lower()
         return base / bt / f"{dr}.gif"
 
-    # Try exact GIF, then tier default, then global default
     path = gif_path_for(best_tier, chosen_ore)
     if not path.exists():
         path = gif_path_for(best_tier, "default")
@@ -244,29 +264,33 @@ async def mine(pool, ctx):
         if path.exists():
             file = discord.File(path, filename="mine.gif")
 
-            # Embed description includes "and it broke" if the pickaxe hit 0 uses
+            # Initial "swing" embed with GIF
             broke_text = " and it broke" if broke else ""
-            embed = discord.Embed(
-                description=f"{ctx.author.mention} swings their **{best_tier.title()} Pickaxe**...{broke_text}"
+            pre = discord.Embed(
+                description=f"{ctx.author.mention} swings their **{best_tier.title()} Pickaxe**...{broke_text}",
+                color=color
             )
-            embed.set_image(url="attachment://mine.gif")
+            pre.set_image(url="attachment://mine.gif")
 
-            msg = await ctx.send(embed=embed, file=file)
-            await asyncio.sleep(2.2)
+            msg = await ctx.send(embed=pre, file=file)
+            await asyncio.sleep(2.0)
 
-            # Replace the embed with the result text
-            await msg.edit(content=result, embed=None)
+            # Edit to the final RESULT EMBED (keeps the attachment)
+            await msg.edit(embed=build_result_embed())
         else:
-            # If no GIF at all, just show a quick text cue then the result
-            msg = await ctx.send(f"{ctx.author.mention} *clink clink...*")
-            await asyncio.sleep(0.6)
-            await msg.edit(content=result)
+            # No GIF: just send the result embed
+            await ctx.send(embed=build_result_embed())
+
     except Exception:
-        # On any send/edit error, fall back to plain result
-        if msg:
-            try:
-                await msg.edit(content=result, embed=None)
-            except Exception:
-                await ctx.send(result)
-        else:
-            await ctx.send(result)
+        # Fallback: still send the result embed
+        try:
+            if msg:
+                await msg.edit(embed=build_result_embed())
+            else:
+                await ctx.send(embed=build_result_embed())
+        except Exception:
+            # Absolute last resort
+            await ctx.send(
+                f"{ctx.author.mention} mined with a **{best_tier.title()} Pickaxe** and found "
+                f"{emoji} **{amount} {chosen_ore}**! You now have **{total} {chosen_ore}**."
+            )

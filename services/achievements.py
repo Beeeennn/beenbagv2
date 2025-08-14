@@ -65,7 +65,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
     },
     "gift_leg":{
         "name": "Too Kind",
-        "description": "Give another player a legendary mob `give <player> <mob>",
+        "description": "Give another player a legendary mob `give <player> <mob>`",
         "exp": 20,
         "hidden": False,
         "repeatable": False,
