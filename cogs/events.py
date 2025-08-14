@@ -197,6 +197,12 @@ class Events(commands.Cog):
             elif message.author.id == 1376308591115501618:
                 try: await message.add_reaction("🐈")
                 except Exception: pass
+            txt = (message.content or "").casefold()
+            if "been" in txt:
+                try:
+                    await message.add_reaction("👀")
+                except Exception:
+                    pass             
         if message.author.bot:
             return
 
