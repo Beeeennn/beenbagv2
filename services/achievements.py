@@ -207,14 +207,15 @@ CREATE TABLE IF NOT EXISTS user_achievement (
 """
 
 UPSERT_SQL = """
-INSERT INTO achievement (key, name, description, exp, hidden, repeatable)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO achievement (key, name, description, exp, hidden, repeatable, category)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (key) DO UPDATE SET
   name = EXCLUDED.name,
   description = EXCLUDED.description,
   exp = EXCLUDED.exp,
   hidden = EXCLUDED.hidden,
-  repeatable = EXCLUDED.repeatable;
+  repeatable = EXCLUDED.repeatable,
+  category = EXCLUDED.category;
 """
 # --- helpers to work with Context OR Message -------------------------------
 from typing import List  # at top with your other typing imports
