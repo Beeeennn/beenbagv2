@@ -1,4 +1,5 @@
-.env 
+.env.dev
 .venv/
 __pycache__/
 *.pyc
+beenbag_2025-08-14.dump

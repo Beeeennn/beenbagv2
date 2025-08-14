@@ -11,6 +11,8 @@ import random
 from constants import MOBS,RARITIES,COLOR_MAP
 import discord
 import asyncio
+from config import settings
+
 chat_xp_cd = commands.CooldownMapping.from_cooldown(
     2,                # max tokens
     1800.0,           # per 1800 seconds (30m)
@@ -23,12 +25,19 @@ class Events(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        if self._ready_once:
-            return
-        self._ready_once = True
-        # start tasks only once
-        start_all_guild_spawn_tasks(self.bot)
-        asyncio.create_task(give_fish_food_task(self.bot, self.bot.db_pool))
+        # achievements schema first (safe re-run)
+        from services import achievements
+        await achievements.ensure_schema(self.bot.db_pool)
+        await achievements.sync_master(self.bot.db_pool)
+
+        # start spawn tasks only in the right environment
+        for g in self.bot.guilds:
+            if settings.IS_DEV:
+                if g.id in settings.TEST_GUILDS:
+                    start_guild_spawn_task(self.bot, g.id)
+            else:
+                if g.id not in settings.TEST_GUILDS:
+                    start_guild_spawn_task(self.bot, g.id)
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):

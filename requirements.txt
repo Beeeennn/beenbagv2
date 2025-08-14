@@ -4,3 +4,4 @@ asyncpg
 pillow
 pytz
 dateparser
+python-dotenv

@@ -10,6 +10,13 @@ from discord.errors import HTTPException
 from core.bot_client import BeenBag
 from db.pool import init_pool, close_pool
 from http_server.server import start_http_server, stop_http_server
+# settings.py (or at top of bot.py)
+import os
+
+ENV = os.getenv("ENV", "prod").lower()  # "prod" or "dev"
+COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "!")
+TEST_GUILDS = {int(x) for x in os.getenv("TEST_GUILDS", "").split(",") if x.strip().isdigit()}
+IS_DEV = ENV == "dev"
 
 logging.basicConfig(
     level=logging.INFO,
