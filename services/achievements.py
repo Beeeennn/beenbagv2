@@ -2,6 +2,7 @@
 from typing import Dict, Any, Iterable, Optional
 import asyncpg
 from discord import Embed, Color
+from utils import game_helpers
 
 # ---- 2a) Define your achievements here (source of truth) ----
 # key must be stable; you can safely change name/description/exp later.
@@ -227,12 +228,12 @@ async def _grant_exp(pool: asyncpg.Pool, ctx, amount: int):
     """
     from services import progression
     try:
-        await progression.gain_exp(pool, ctx.author.id, amount)   # pattern A
+        await game_helpers.gain_exp(pool, ctx.author.id, amount)   # pattern A
     except TypeError:
         try:
-            await progression.gain_exp(ctx, pool, amount)         # pattern B
+            await game_helpers.gain_exp(ctx, pool, amount)         # pattern B
         except TypeError:
-            await progression.gain_exp(ctx, amount)                # pattern C (last resort)
+            await game_helpers.gain_exp(ctx, amount)                # pattern C (last resort)
 
 # ---- 2d) Public API ----
 async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str) -> Optional[int]:
