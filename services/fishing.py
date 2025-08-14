@@ -181,8 +181,8 @@ async def generate_aquarium(pool, ctx, who):
             continue
         base = Image.open(base_path).convert("RGBA")
         overlay = Image.open(overlay_path).convert("RGBA")
-        tinted_base = await tint_image(base, color1)
-        tinted_overlay = await tint_image(overlay, color2)
+        tinted_base =  tint_image(base, color1)
+        tinted_overlay = tint_image(overlay, color2)
         fish_image = Image.alpha_composite(tinted_base, tinted_overlay)
         scale = 1
         new_size = (fish_image.width * scale, fish_image.height * scale)

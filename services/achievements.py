@@ -14,7 +14,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
-        "Category":"Starter",
+        "category":"Starter",
     },
     "craft_pick": {
         "name": "Craft A Pickaxe",
@@ -22,7 +22,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
-        "Category":"Starter",
+        "category":"Starter",
     },
     "first_mine": {
         "name": "Yearned for the Mines - `mine`",
@@ -30,7 +30,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
-        "Category":"Starter",
+        "category":"Starter",
     },
     "first_fish": {
         "name": "Plenty of fish in the sea",
@@ -38,7 +38,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
-        "Category":"Starter",
+        "category":"Starter",
     },
     "first_farm": {
         "name": "It aint much, but it's honest work",
@@ -46,7 +46,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
-        "Category":"Starter",
+        "category":"Starter",
     },
     "first_breed": {
         "name": "Matchmaker",
@@ -54,7 +54,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 3,
         "hidden": False,
         "repeatable": False,
-        "Category":"Starter",
+        "category":"Starter",
     },
     "mob_catch": {
         "name": "Gotcha",
@@ -62,7 +62,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
-        "Category":"Starter",
+        "category":"Starter",
     },
     "upbarn": {
         "name": "Upgrades, people!",
@@ -70,7 +70,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 2,
         "hidden": False,
         "repeatable": False,
-        "Category":"Starter",
+        "category":"Starter",
     },
     "gift_leg":{
         "name": "Too Kind",
@@ -78,7 +78,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 20,
         "hidden": False,
         "repeatable": False,
-        "Category":"Challanging",
+        "category":"Challanging",
     },
     "20_wood": {
         "name": "Lumberjack",
@@ -86,7 +86,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 5,
         "hidden": False,
         "repeatable": False,  
-        "Category":"Early",     
+        "category":"Early",     
     },
     "full_aquarium": {
         "name": "Too Many Fish in the Sea",
@@ -94,7 +94,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 5,
         "hidden": False,
         "repeatable": False, 
-        "Category":"Challenging",      
+        "category":"Challenging",      
     },
     "full_food": {
         "name": "No More Food",
@@ -102,7 +102,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 5,
         "hidden": False,
         "repeatable": False,  
-        "Category":"Challenging",     
+        "category":"Challenging",     
     },
     "overkill": {
         "name": "Overkill",
@@ -110,7 +110,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 5,
         "hidden": False,
         "repeatable": False,  
-        "Category":"Random",     
+        "category":"Random",     
     },
     "sac": {
         "name": "Don't hate the player",
@@ -118,7 +118,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 5,
         "hidden": False,
         "repeatable": False,  
-        "Category":"Starter",     
+        "category":"Starter",     
     },
     "epic_mob": {
         "name": "EPIC!",
@@ -126,7 +126,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 5,
         "hidden": False,
         "repeatable": False,     
-        "Category":"Early",  
+        "category":"Early",  
     },
     "chicken_jockey": {
         "name": "CHICKEN JOCKEY",
@@ -134,7 +134,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 5,
         "hidden": True,
         "repeatable": False,    
-        "Category":"Starter",   
+        "category":"Starter",   
     },
     "1000_ems":{
         "name": "Slightly Rich",
@@ -142,7 +142,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 20,
         "hidden": False,
         "repeatable": False,      
-        "Category":"Challenging", 
+        "category":"Challenging", 
     },
     "10000_ems":{
         "name": "Very Rich",
@@ -150,7 +150,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 20,
         "hidden": False,
         "repeatable": False,  
-        "Category":"Extreme",     
+        "category":"Extreme",     
     },
     "dia_with_wood": {
         "name": "RNG Carried",
@@ -158,7 +158,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 10,
         "hidden": False,
         "repeatable": False,  
-        "Category":"Random",     
+        "category":"Random",     
     },
     "dia_hoe": {
         "name": "Don't waste your diamonds on a hoe",
@@ -166,7 +166,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 5,
         "hidden": False,
         "repeatable": False,      
-        "Category":"Early", 
+        "category":"Early", 
     },
     "full_bestiary": {
         "name": "Master Assassin",
@@ -174,7 +174,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 20,
         "hidden": False,
         "repeatable": False,     
-        "Category":"Extreme",  
+        "category":"Extreme",  
     },
     "full_barn": {
         "name": "Noah's Ark",
@@ -182,7 +182,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 20,
         "hidden": False,
         "repeatable": False,  
-        "Category":"Extreme",     
+        "category":"Extreme",     
     },
 }
 
