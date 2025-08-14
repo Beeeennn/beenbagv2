@@ -203,43 +203,59 @@ async def gain_exp(conn, bot, user_id: int, exp_gain: int, message=None, guild_i
     new_lvl = get_level_from_exp(new_exp)
     if new_lvl <= old_lvl:
         return
-    await lb_inc(conn, "overall_experience",user_id,guild_id,exp_gain)
-    announce_id = await conn.fetchval("""
-        SELECT announce_channel_id FROM guild_settings WHERE guild_id = $1
-    """, guild_id)
+
+    await lb_inc(conn, "overall_experience", user_id, guild_id, exp_gain)
+
+    # Announce channel lookup works without message:
+    announce_id = await conn.fetchval(
+        "SELECT announce_channel_id FROM guild_settings WHERE guild_id = $1",
+        guild_id
+    )
     announce_ch = bot.get_channel(announce_id) if announce_id else None
 
-    # adjust roles per guild
+    # --- role updates should not depend on "message" ---
+    guild = None
+    member = None
     if message and message.guild:
         guild = message.guild
         member = guild.get_member(user_id)
+    else:
+        if guild_id:
+            guild = bot.get_guild(guild_id)
+            if guild:
+                member = guild.get_member(user_id)
 
-        # remove previous milestone role
+    if guild and member:
+        # remove previous milestone role (unchanged)
         prev_milestone = max([m for m in MILESTONE_ROLES if m < new_lvl], default=None)
         if prev_milestone:
-            prev_role_id = await conn.fetchval("""
-                SELECT role_id FROM guild_level_roles WHERE guild_id = $1 AND level = $2
-            """, guild_id, prev_milestone)
-            if prev_role_id and member:
+            prev_role_id = await conn.fetchval(
+                "SELECT role_id FROM guild_level_roles WHERE guild_id = $1 AND level = $2",
+                guild_id, prev_milestone
+            )
+            if prev_role_id:
                 old_role = guild.get_role(prev_role_id)
-                if old_role in member.roles:
+                if old_role and old_role in member.roles:
                     await member.remove_roles(old_role, reason="Leveled up")
 
         # add new milestone role
         if new_lvl in MILESTONE_ROLES:
-            role_id = await conn.fetchval("""
-                SELECT role_id FROM guild_level_roles WHERE guild_id = $1 AND level = $2
-            """, guild_id, new_lvl)
-            if role_id and member:
+            role_id = await conn.fetchval(
+                "SELECT role_id FROM guild_level_roles WHERE guild_id = $1 AND level = $2",
+                guild_id, new_lvl
+            )
+            if role_id:
                 new_role = guild.get_role(role_id)
                 if new_role:
                     await member.add_roles(new_role, reason="Leveled up")
 
+    # Announce if possible
     text = f"🎉 <@{user_id}> leveled up to **Level {new_lvl}**!"
     if announce_ch:
         await announce_ch.send(text)
     elif message:
         await message.channel.send(text)
+        
 async def lb_inc(conn, leaderboard_name: str, user_id: int, guild_id: int | None, amount: int):
     """
     Increment a leaderboard counter.

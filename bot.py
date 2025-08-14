@@ -77,7 +77,7 @@ async def login_with_backoff(token: str, db_pool):
                     backoff = min(backoff * 2, BACKOFF_MAX)
 
                 log.warning("Discord login 429. Sleeping %.2fs before retry.", wait)
-                await asyncio.sleep(wait)
+                await asyncio.sleep(wait+10)
                 continue
 
 

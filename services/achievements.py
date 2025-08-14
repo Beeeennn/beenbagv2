@@ -217,7 +217,7 @@ async def _get_user_ach(con: asyncpg.Connection, user_id: int, ach_id: int):
     )
 
 # ---- 2c) EXP hand-off ----
-async def _grant_exp(pool: asyncpg.Pool, ctx, amount: int):
+async def _grant_exp(conn, pool: asyncpg.Pool, ctx, amount: int):
     """
     Call your existing progression.gain_exp here.
     Adjust call signature as needed — most projects either do:
@@ -226,10 +226,8 @@ async def _grant_exp(pool: asyncpg.Pool, ctx, amount: int):
         await progression.gain_exp(ctx, pool, amount)
     Below we try the common patterns to keep this drop-in.
     """
-    from services import progression
     gid = game_helpers.gid_from_ctx(ctx)
-    async with pool.acquire() as conn:
-        await game_helpers.gain_exp(conn,ctx.bot, ctx.author.id, amount, None, gid) 
+    await game_helpers.gain_exp(conn,ctx.bot, ctx.author.id, amount, None, gid) 
 
 # ---- 2d) Public API ----
 async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str) -> Optional[int]:
@@ -256,7 +254,7 @@ async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str) -> Optional[int
                     "UPDATE user_achievement SET times_awarded = times_awarded + 1, unlocked_at = NOW() WHERE user_id = $1 AND achievement_id = $2",
                     user_id, ach["id"]
                 )
-                await _grant_exp(pool, ctx, ach["exp"])
+                await _grant_exp(con, ctx, ach["exp"])
                 return ach["exp"]
             else:
                 return 0
