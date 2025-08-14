@@ -30,16 +30,8 @@ async def inv(pool, ctx, who: str = None):
             WHERE user_id = $1 AND guild_id = $2 AND uses_left > 0
         """, user_id,guild_id)
 
-        # 3. Emeralds (still in old table)
-        emerald_row = await conn.fetchrow("""
-            SELECT emeralds
-            FROM accountinfo
-            WHERE discord_id = $1 AND guild_id = $2
-        """, user_id,guild_id)
-        emeralds = emerald_row["emeralds"] if emerald_row else 0
-
     # Empty check
-    if not items and not tools and not emeralds:
+    if not items and not tools:
         return await ctx.send(f"{member.mention}, your inventory is empty.")
 
     # Build embed
