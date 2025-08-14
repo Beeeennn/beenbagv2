@@ -193,7 +193,35 @@ ON CONFLICT (key) DO UPDATE SET
   hidden = EXCLUDED.hidden,
   repeatable = EXCLUDED.repeatable;
 """
+# --- Embeds ---
+def _safe_avatar(user):
+    try:
+        return getattr(user.display_avatar, "url", None) or getattr(user.avatar, "url", None)
+    except Exception:
+        return None
 
+async def _send_unlock_embed(ctx, *, key: str, name: str, description: str, exp: int,
+                             repeatable: bool, times_awarded: int):
+    trophy = "🏆"
+    title = f"{trophy} Achievement Unlocked!"
+    desc = f"**{name}**\n{description}"
+
+    e = Embed(title=title, description=desc, color=Color.gold())
+    e.add_field(name="EXP", value=f"+{exp}", inline=True)
+    if repeatable and times_awarded > 1:
+        e.add_field(name="Times Awarded", value=f"×{times_awarded}", inline=True)
+
+    e.set_author(name=ctx.author.display_name, icon_url=_safe_avatar(ctx.author))
+    e.set_footer(text=key)
+
+    try:
+        await ctx.send(embed=e)
+    except Exception:
+        # never break gameplay if an embed fails
+        try:
+            await ctx.send(f"{trophy} **Achievement Unlocked:** {name} (+{exp} EXP)")
+        except Exception:
+            pass
 async def ensure_schema(pool: asyncpg.Pool):
     async with pool.acquire() as con:
         await con.execute(SCHEMA_SQL)
@@ -230,51 +258,71 @@ async def _grant_exp(conn, ctx, amount: int):
     await game_helpers.gain_exp(conn,ctx.bot, ctx.author.id, amount, None, gid) 
 
 # ---- 2d) Public API ----
-async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str) -> Optional[int]:
+async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, notify: bool = True) -> Optional[int]:
     """
-    Force-grant (not idempotent). Returns EXP granted (int) or None if key unknown.
+    Grant (idempotent for non-repeatables). Returns EXP granted (int),
+    0 if already owned (non-repeatable), or None if key unknown.
     """
     meta = ACHIEVEMENTS.get(key)
     if not meta:
         return None
+
     async with pool.acquire() as con, con.transaction():
         ach = await _get_achievement_row(con, key)
         if not ach:
-            # If master not synced yet, create on the fly
             await con.execute(
-                UPSERT_SQL, key, meta["name"], meta["description"], meta["exp"], meta.get("hidden", False), meta.get("repeatable", False)
+                UPSERT_SQL, key, meta["name"], meta["description"], meta["exp"],
+                meta.get("hidden", False), meta.get("repeatable", False)
             )
             ach = await _get_achievement_row(con, key)
 
-        row = await _get_user_ach(con, user_id, ach["id"])
-        if row:
-            # If repeatable, increment; if not, just return 0 (already had it)
-            if ach["repeatable"]:
-                await con.execute(
-                    "UPDATE user_achievement SET times_awarded = times_awarded + 1, unlocked_at = NOW() WHERE user_id = $1 AND achievement_id = $2",
-                    user_id, ach["id"]
-                )
-                await _grant_exp(con, ctx, ach["exp"])
-                return ach["exp"]
-            else:
-                return 0
-        else:
-            await con.execute(
-                "INSERT INTO user_achievement (user_id, achievement_id) VALUES ($1, $2)",
-                user_id, ach["id"]
-            )
-            await _grant_exp(con, ctx, ach["exp"])
-            return ach["exp"]
+        ach_id = ach["id"]
+        exp    = ach["exp"]
+        is_repeat = ach["repeatable"]
 
-async def try_grant(pool: asyncpg.Pool, ctx, user_id: int, key: str) -> Optional[int]:
-    """
-    Idempotent grant: if not repeatable and already owned => returns 0.
-    Otherwise delegates to grant(). Returns EXP int, 0, or None.
-    """
-    meta = ACHIEVEMENTS.get(key)
-    if not meta:
+        if is_repeat:
+            row = await con.fetchrow(
+                """
+                INSERT INTO user_achievement (user_id, achievement_id, times_awarded)
+                VALUES ($1, $2, 1)
+                ON CONFLICT (user_id, achievement_id)
+                DO UPDATE SET times_awarded = user_achievement.times_awarded + 1,
+                              unlocked_at   = NOW()
+                RETURNING times_awarded
+                """,
+                user_id, ach_id
+            )
+            await _grant_exp(con, ctx, exp)
+            if notify:
+                await _send_unlock_embed(
+                    ctx, key=key, name=meta["name"], description=meta["description"],
+                    exp=exp, repeatable=True, times_awarded=row["times_awarded"]
+                )
+            return exp
+        else:
+            inserted = await con.fetchrow(
+                """
+                INSERT INTO user_achievement (user_id, achievement_id)
+                VALUES ($1, $2)
+                ON CONFLICT (user_id, achievement_id) DO NOTHING
+                RETURNING 1
+                """,
+                user_id, ach_id
+            )
+            if inserted:
+                await _grant_exp(con, ctx, exp)
+                if notify:
+                    await _send_unlock_embed(
+                        ctx, key=key, name=meta["name"], description=meta["description"],
+                        exp=exp, repeatable=False, times_awarded=1
+                    )
+                return exp
+            return 0
+
+async def try_grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, *, notify: bool = True) -> Optional[int]:
+    if ACHIEVEMENTS.get(key) is None:
         return None
-    return await grant(pool, ctx, user_id, key)
+    return await grant(pool, ctx, user_id, key, notify=notify)
 
 async def try_grant_many(pool: asyncpg.Pool, ctx, user_id: int, keys: Iterable[str]) -> int:
     """
@@ -285,7 +333,65 @@ async def try_grant_many(pool: asyncpg.Pool, ctx, user_id: int, keys: Iterable[s
         gained = await try_grant(pool, ctx, user_id, k) or 0
         total += gained
     return total
+def _lines_to_embeds(title: str, lines: list[str], color: Color, author=None, icon_url=None):
+    # Split long lists into multiple embeds safely
+    chunks = []
+    cur = []
+    cur_len = 0
+    for line in lines:
+        if cur_len + len(line) + 1 > 3800:  # leave room for title/headers
+            chunks.append(cur)
+            cur, cur_len = [], 0
+        cur.append(line)
+        cur_len += len(line) + 1
+    if cur:
+        chunks.append(cur)
 
+    embeds = []
+    for i, chunk in enumerate(chunks, 1):
+        e = Embed(title=title, description="\n".join(chunk), color=color)
+        if author:
+            e.set_author(name=author, icon_url=icon_url)
+        if len(chunks) > 1:
+            e.set_footer(text=f"Page {i}/{len(chunks)}")
+        embeds.append(e)
+    return embeds
+
+def render_achievements_embeds(user, owned: list[dict], not_owned: list[dict]) -> list[Embed]:
+    # Owned (unlocked)
+    owned_lines = []
+    for o in owned:
+        rpt = f" ×{o['times_awarded']}" if o.get("repeatable") and o.get("times_awarded", 1) > 1 else ""
+        owned_lines.append(f"• **{o['name']}**{rpt} — {o['description']} *(+{o['exp']} EXP)*")
+
+    # Locked (non-hidden)
+    locked_lines = [f"• **{n['name']}** — {n['description']} *(+{n['exp']} EXP)*" for n in not_owned]
+
+    icon = _safe_avatar(user)
+    embeds: list[Embed] = []
+
+    if owned_lines:
+        embeds += _lines_to_embeds(
+            title=f"🏆 {user.display_name} — Unlocked ({len(owned)})",
+            lines=owned_lines,
+            color=Color.gold(),
+            author=user.display_name,
+            icon_url=icon
+        )
+
+    if locked_lines:
+        embeds += _lines_to_embeds(
+            title=f"🔒 {user.display_name} — Locked ({len(not_owned)})",
+            lines=locked_lines,
+            color=Color.dark_grey(),
+            author=user.display_name,
+            icon_url=icon
+        )
+
+    if not embeds:
+        embeds = [Embed(title="Achievements", description="No achievements defined yet.", color=Color.blurple())]
+
+    return embeds
 async def list_user_achievements(pool: asyncpg.Pool, user_id: int):
     """
     Returns: (owned, not_owned) where:
