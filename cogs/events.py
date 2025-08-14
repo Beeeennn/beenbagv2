@@ -97,7 +97,83 @@ class Events(commands.Cog):
             )
         except Exception:
             logging.exception("Failed to send welcome message")
+    @commands.Cog.listener()
+    async def on_guild_join(self, guild: discord.Guild):
+        # keep your existing spawn logic
+        from config import settings
+        if settings.IS_DEV:
+            if guild.id in settings.TEST_GUILDS:
+                start_guild_spawn_task(self.bot, guild.id)
+        else:
+            if guild.id not in settings.TEST_GUILDS:
+                start_guild_spawn_task(self.bot, guild.id)
 
+        # try to read preferred announce channel (if your table already has a row)
+        row = None
+        try:
+            async with self.bot.db_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT announce_channel_id FROM guild_settings WHERE guild_id=$1",
+                    guild.id
+                )
+        except Exception:
+            pass
+
+        # choose where to speak: announce_channel_id → system_channel → first usable text channel
+        channel = None
+        if row and row["announce_channel_id"]:
+            ch = guild.get_channel(row["announce_channel_id"])
+            if ch and ch.permissions_for(guild.me).send_messages:
+                channel = ch
+        if channel is None:
+            ch = guild.system_channel
+            if ch and ch.permissions_for(guild.me).send_messages:
+                channel = ch
+        if channel is None:
+            for ch in guild.text_channels:
+                perms = ch.permissions_for(guild.me)
+                if perms.view_channel and perms.send_messages:
+                    channel = ch
+                    break
+
+        # prefix (fallback to 'bc!' if cache/helper isn't available yet)
+        try:
+            pref = get_cached_prefix(guild.id)
+        except Exception:
+            pref = "bc!"
+
+        # build the welcome embed
+        embed = discord.Embed(
+            title=f"Thanks for inviting {self.bot.user.name}! 🎉",
+            description=(
+                f"**First step:** run `{pref}setup`.\n"
+                f"This sets which channels I use for spawns, logs, and announcements."
+            ),
+            color=discord.Color.blurple()
+        )
+        embed.add_field(
+            name="Useful commands",
+            value=(
+                f"• `{pref}help` — see everything I can do\n"
+                f"• `{pref}achievements` — your progress & badges\n"
+                f"• `{pref}credits` — attributions & licensing"
+            ),
+            inline=False
+        )
+        embed.set_footer(text=f"Prefix here is `{pref}`.")
+
+        # send it (or DM the owner if we can't speak anywhere)
+        try:
+            if channel:
+                await channel.send(embed=embed)
+            else:
+                if guild.owner and guild.owner.dm_channel is None:
+                    await guild.owner.create_dm()
+                if guild.owner:
+                    await guild.owner.dm_channel.send(embed=embed)
+        except Exception:
+            # don't crash if we can't send a message
+            pass
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot:
