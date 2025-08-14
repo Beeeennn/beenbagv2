@@ -134,21 +134,27 @@ async def chop(pool, ctx):
 
 async def mine(pool, ctx):
     """Mine for cobblestone or ores; better pickaxes yield rarer drops."""
+    import asyncio, random
+    from pathlib import Path
+    import discord
+
     user_id = ctx.author.id
     guild_id = gid_from_ctx(ctx)
+
     async with pool.acquire() as conn:
-        await ensure_player(conn,ctx.author.id,guild_id)
+        await ensure_player(conn, ctx.author.id, guild_id)
+
         # 1) Fetch all usable pickaxes
         pickaxes = await conn.fetch(
             """
             SELECT tier, uses_left
               FROM tools
              WHERE user_id = $1
-             AND guild_id = $2
+               AND guild_id = $2
                AND tool_name = 'pickaxe'
                AND uses_left > 0
             """,
-            user_id,guild_id
+            user_id, guild_id
         )
 
         if not pickaxes:
@@ -165,61 +171,96 @@ async def mine(pool, ctx):
                 best_tier = tier
                 break
 
-        # 3) Consume 1 use on that pickaxe
-        await conn.execute(
+        if best_tier is None:
+            ctx.command.reset_cooldown(ctx)
+            return await ctx.send("❌ You have no usable pickaxe.")
+
+        # Uses before (to handle rare cases where RETURNING isn't available)
+        uses_before = next((r["uses_left"] for r in pickaxes if r["tier"] == best_tier), 0)
+
+        # 3) Consume 1 use on that pickaxe and get remaining uses
+        uses_after = await conn.fetchval(
             """
             UPDATE tools
                SET uses_left = uses_left - 1
              WHERE user_id = $1
-             AND guild_id = $2
+               AND guild_id = $2
                AND tool_name = 'pickaxe'
                AND tier = $3
                AND uses_left > 0
+         RETURNING uses_left
             """,
             user_id, guild_id, best_tier
         )
 
+        # Did it break on this swing?
+        broke = (uses_after == 0) if uses_after is not None else (uses_before == 1)
+
         # 4) Pick a drop according to your tier’s table
         table = DROP_TABLES[best_tier]
-
         ores = list(table.keys())
         weights = [table[ore]["chance"] for ore in ores]
 
-        # Choose one ore based on weights
         chosen_ore = random.choices(ores, weights=weights, k=1)[0]
-
-        # Get a random amount between min and max for that ore
         drop_info = table[chosen_ore]
         amount = random.randint(drop_info["min"], drop_info["max"])
 
         # 5) Grant the drop
-        await give_items(user_id,chosen_ore,amount,"resource",False,conn,guild_id)
+        await give_items(user_id, chosen_ore, amount, "resource", False, conn, guild_id)
+
         # fetch new total
-        
-        total = await get_items(conn, user_id, chosen_ore,guild_id)
+        total = await get_items(conn, user_id, chosen_ore, guild_id)
 
     # Prepare the final result text
-    emojis = {"cobblestone":"🪨","iron":"🔩","gold":"🪙","diamond":"💎"}
+    emojis = {"cobblestone": "🪨", "iron": "🔩", "gold": "🪙", "diamond": "💎"}
     emoji = emojis.get(chosen_ore, "⛏️")
     result = (
         f"{ctx.author.mention} mined with a **{best_tier.title()} Pickaxe** and found "
         f"{emoji} **{amount} {chosen_ore}**! You now have **{total} {chosen_ore}**."
     )
 
-    # --- 2) Play the animation ---
-    frames = [
-        "⛏️ Mining... [░░░░░]",
-        "⛏️ Mining... [▓░░░░]",
-        "⛏️ Mining... [▓▓░░░]",
-        "⛏️ Mining... [▓▓▓░░]",
-        "⛏️ Mining... [▓▓▓▓░]",
-        "⛏️ Mining... [▓▓▓▓▓]",
-    ]
-    msg = await ctx.send(f"{ctx.author.mention} {frames[0]}")
-    for frame in frames[1:]:
-        await asyncio.sleep(0.5)
-        await msg.edit(content=f"{ctx.author.mention} {frame}")
+    # --- Play the GIF animation from assets/mining/<best_pick>/<drop>.gif ---
+    def gif_path_for(bt: str, dr: str) -> Path:
+        base = Path("assets/mining")
+        bt = (bt or "default").lower()
+        dr = (dr or "default").lower()
+        return base / bt / f"{dr}.gif"
 
-    # --- 3) Show the result ---
-    await asyncio.sleep(0.5)
-    await msg.edit(content=result)
+    # Try exact GIF, then tier default, then global default
+    path = gif_path_for(best_tier, chosen_ore)
+    if not path.exists():
+        path = gif_path_for(best_tier, "default")
+        if not path.exists():
+            path = Path("assets/mining/default/default.gif")
+
+    msg = None
+    try:
+        if path.exists():
+            file = discord.File(path, filename="mine.gif")
+
+            # Embed description includes "and it broke" if the pickaxe hit 0 uses
+            broke_text = " and it broke" if broke else ""
+            embed = discord.Embed(
+                description=f"{ctx.author.mention} swings their **{best_tier.title()} Pickaxe**...{broke_text}"
+            )
+            embed.set_image(url="attachment://mine.gif")
+
+            msg = await ctx.send(embed=embed, file=file)
+            await asyncio.sleep(2.2)
+
+            # Replace the embed with the result text
+            await msg.edit(content=result, embed=None)
+        else:
+            # If no GIF at all, just show a quick text cue then the result
+            msg = await ctx.send(f"{ctx.author.mention} *clink clink...*")
+            await asyncio.sleep(0.6)
+            await msg.edit(content=result)
+    except Exception:
+        # On any send/edit error, fall back to plain result
+        if msg:
+            try:
+                await msg.edit(content=result, embed=None)
+            except Exception:
+                await ctx.send(result)
+        else:
+            await ctx.send(result)
