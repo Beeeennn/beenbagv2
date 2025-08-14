@@ -195,7 +195,86 @@ ON CONFLICT (key) DO UPDATE SET
   repeatable = EXCLUDED.repeatable;
 """
 # --- helpers to work with Context OR Message -------------------------------
+from typing import List  # at top with your other typing imports
 
+def _lines_to_embeds(title: str, lines: List[str], color: Color, author=None, icon_url=None) -> List[Embed]:
+    """
+    Split a long list of lines into multiple embeds safely (Discord ~6k hard cap;
+    stay well under by limiting description to ~3800 chars).
+    """
+    chunks: List[List[str]] = []
+    cur: List[str] = []
+    cur_len = 0
+    limit = 3800  # leave room for title/headers/footers
+
+    for line in lines:
+        ln = len(line) + 1
+        if cur_len + ln > limit:
+            chunks.append(cur)
+            cur, cur_len = [], 0
+        cur.append(line)
+        cur_len += ln
+    if cur:
+        chunks.append(cur)
+
+    embeds: List[Embed] = []
+    for i, chunk in enumerate(chunks, 1):
+        e = Embed(title=title, description="\n".join(chunk), color=color)
+        if author:
+            e.set_author(name=author, icon_url=icon_url)
+        if len(chunks) > 1:
+            e.set_footer(text=f"Page {i}/{len(chunks)}")
+        embeds.append(e)
+    return embeds
+
+def render_achievements_embeds(user, owned: List[dict], not_owned: List[dict]) -> List[Embed]:
+    """
+    Build one or more embeds listing unlocked and locked (non-hidden) achievements.
+    Expects the shape returned by list_user_achievements().
+    """
+    # Unlocked
+    owned_lines: List[str] = []
+    for o in owned:
+        name = o["name"]
+        desc = o["description"]
+        exp  = o["exp"]
+        rpt  = f" ×{o['times_awarded']}" if o.get("repeatable") and o.get("times_awarded", 1) > 1 else ""
+        owned_lines.append(f"• **{name}**{rpt} — {desc} *(+{exp} EXP)*")
+
+    # Locked (non-hidden already filtered by list_user_achievements)
+    locked_lines: List[str] = []
+    for n in not_owned:
+        name = n["name"]
+        desc = n["description"]
+        exp  = n["exp"]
+        locked_lines.append(f"• **{name}** — {desc} *(+{exp} EXP)*")
+
+    # Author icon (avoid depending on _safe_avatar)
+    icon_url = (
+        getattr(getattr(user, "display_avatar", None), "url", None)
+        or getattr(getattr(user, "avatar", None), "url", None)
+    )
+
+    embeds: List[Embed] = []
+    if owned_lines:
+        embeds += _lines_to_embeds(
+            title=f"🏆 {user.display_name} — Unlocked ({len(owned)})",
+            lines=owned_lines,
+            color=Color.gold(),
+            author=user.display_name,
+            icon_url=icon_url,
+        )
+    if locked_lines:
+        embeds += _lines_to_embeds(
+            title=f"🔒 {user.display_name} — Locked ({len(not_owned)})",
+            lines=locked_lines,
+            color=Color.dark_grey(),
+            author=user.display_name,
+            icon_url=icon_url,
+        )
+    if not embeds:
+        embeds = [Embed(title="Achievements", description="No achievements defined yet.", color=Color.blurple())]
+    return embeds
 def _safe_avatar(user):
     try:
         return getattr(user.display_avatar, "url", None) or getattr(user.avatar, "url", None)
