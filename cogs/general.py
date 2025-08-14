@@ -3,6 +3,9 @@ import discord
 from services import crafting, shop, activities, fishing, barn, progression, yt_link
 from utils.prefixes import get_cached_prefix
 from constants import BLOCKED_SHOP_ITEMS
+
+INVITE_URL = "https://discord.com/oauth2/authorize?client_id=1396168326132011119&scope=bot%20applications.commands&permissions=2714688679152"
+
 class General(commands.Cog):
     def __init__(self, bot): 
         self.bot = bot
@@ -49,6 +52,11 @@ class General(commands.Cog):
         e.set_footer(text="Questions about a specific image? Use the source command above.")
         await ctx.send(embed=e)
 
+    @commands.command(name="invite", help="Get the bot's invite link.")
+    async def invite(self, ctx: commands.Context):
+        view = discord.ui.View()
+        view.add_item(discord.ui.Button(label="Invite me", url=INVITE_URL))
+        await ctx.send(f"Add me to your server with this link:\n<{INVITE_URL}>", view=view)
     
 async def setup(bot):
     await bot.add_cog(General(bot))

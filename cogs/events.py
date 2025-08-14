@@ -141,12 +141,12 @@ class Events(commands.Cog):
             pref = get_cached_prefix(guild.id)
         except Exception:
             pref = "bc!"
-
+        bot_mention = self.bot.user.mention
         # build the welcome embed
         embed = discord.Embed(
             title=f"Thanks for inviting {self.bot.user.name}! 🎉",
             description=(
-                f"**First step:** run `{pref}setup`.\n"
+                f"**First step:** run `{bot_mention}setup`.\n"
                 f"This sets which channels I use for spawns, logs, and announcements."
             ),
             color=discord.Color.blurple()
@@ -154,9 +154,9 @@ class Events(commands.Cog):
         embed.add_field(
             name="Useful commands",
             value=(
-                f"• `{pref}help` — see everything I can do\n"
-                f"• `{pref}achievements` — your progress & badges\n"
-                f"• `{pref}credits` — attributions & licensing"
+                f"• `{bot_mention}help` — see everything I can do\n"
+                f"• `{bot_mention}achievements` — your progress & badges\n"
+                f"• `{bot_mention}credits` — attributions & licensing"
             ),
             inline=False
         )
