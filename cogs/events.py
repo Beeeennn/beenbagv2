@@ -126,7 +126,7 @@ class Events(commands.Cog):
             bucket = chat_xp_cd.get_bucket(message)
             can_gain = bucket.update_rate_limit() is None
             if can_gain:
-                await gain_exp(conn,self.bot,user_id,1,message)
+                await gain_exp(conn,self.bot,user_id,1,None,guild_id)
         # 0) Try to capture any active spawn in this channel
         name = message.content.strip().lower().replace(" ", "")
         now = datetime.now(timezone.utc)
