@@ -1,5 +1,5 @@
 from discord.ext import commands
-from services import crafting, shop, activities, inventory, fishing, barn, progression, yt_link, minigames,achievements
+from services import crafting, shop, activities, inventory, fishing, barn,exp_display, progression, yt_link, minigames,achievements
 from utils.parsing import parse_item_and_qty, _norm_item_from_args
 from constants import BLOCKED_SHOP_ITEMS
 
@@ -25,9 +25,25 @@ class Game(commands.Cog):
     async def craft_cmd(self, ctx, *args):
         if not args:
             return await ctx.send(f"❌ Usage: `{ctx.clean_prefix}craft <tool> [tier]`")
-        tool = args[0] if len(args) == 1 else "_".join(args[:-1])
-        tier = None if len(args) == 1 else args[-1]
-        # services.crafting.craft(ctx, pool, tool, tier)
+
+        # list of valid tier names (lowercase)
+        valid_tiers = {"wood", "stone", "iron", "gold", "diamond"}
+
+        args = list(args)
+        tier = None
+        tool_parts = []
+
+        for arg in args:
+            if tier is None and arg.lower() in valid_tiers:
+                tier = arg.lower()
+            else:
+                tool_parts.append(arg)
+
+        tool = "_".join(tool_parts).lower()
+
+        if not tool:
+            return await ctx.send("❌ You must specify a tool to craft.")
+
         await crafting.craft(ctx, self.bot.db_pool, tool, tier)
 
     @commands.command(name="recipe")

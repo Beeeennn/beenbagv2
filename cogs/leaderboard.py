@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Tuple
 import discord
 from discord import ui
 from discord.ext import commands
-from services import progression
+from services import progression,exp_display
 from constants import VALID_METRICS  # e.g. {"mobs_caught":"Mobs Caught", ...}
 
 PAGE_SIZE = 10
@@ -306,7 +306,7 @@ class Leaderboard(commands.Cog):
         await ctx.send(embed=embed, view=view)
     @commands.command(name="exp", aliases=["experience", "level", "lvl"])
     async def exp_cmd(self,ctx, *, who: str = None):
-        await progression.exp_cmd(self.bot.db_pool,ctx,who)
+        await exp_display.rank_cmd(self.bot.db_pool, ctx, who)
 
 async def setup(bot):
     await bot.add_cog(Leaderboard(bot))

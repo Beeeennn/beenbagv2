@@ -16,7 +16,7 @@ async def c_givemob(pool, ctx, who, mob_name: str, count: int = 1):
     async with pool.acquire() as conn:
         # 2) Fetch target’s barn capacity and current fill
         row = await conn.fetchrow(
-            "SELECT barn_size FROM new_players WHERE user_id = $1 AND guild_id = $2",
+            "SELECT barn_size FROM new_players_guild  WHERE user_id = $1 AND guild_id = $2",
             member.id, guild_id
         )
         target_size = row["barn_size"] if row else 5
