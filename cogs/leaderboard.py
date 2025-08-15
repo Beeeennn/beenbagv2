@@ -304,7 +304,7 @@ class Leaderboard(commands.Cog):
                 child.disabled = True
 
         await ctx.send(embed=embed, view=view)
-    @commands.command(name="exp", aliases=["experience", "level", "lvl"])
+    @commands.command(name="exp", aliases=["experience", "level", "lvl", "rank"])
     async def exp_cmd(self,ctx, *, who: str = None):
         await exp_display.rank_cmd(self.bot.db_pool, ctx, who)
 

@@ -313,6 +313,9 @@ HELP_CATEGORIES = {
     "yt": "General",
     "linkyt": "General",
 }
+
+CATEGORY_ORDER = ["Game", "Admin", "Leaderboards", "General", "Other"]
+
 DISCORD_FIELD_LIMIT = 1024
 DISCORD_MESSAGE_LIMIT = 2000
 
@@ -545,6 +548,7 @@ class PrettyHelp(commands.HelpCommand):
         for cat_name, cmds in sorted(category_map.items(), key=lambda x: x[0].lower()):
             cmds.sort(key=lambda c: c.qualified_name)
             pairs.append((cat_name, cmds))
+        pairs.sort(key=lambda x: CATEGORY_ORDER.index(x[0]) if x[0] in CATEGORY_ORDER else len(CATEGORY_ORDER))    
         embeds = make_category_embeds(ctx, f"{bot.user.name} Help", pairs)
         options = [discord.SelectOption(label=cog_name, description=f"{len(cmds)} command(s)") for cog_name, cmds in pairs]
         view = Paginator(embeds, author_id=ctx.author.id, options=options)
