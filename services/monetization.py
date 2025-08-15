@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import aiohttp
 from typing import Optional
+import asyncpg
+
 
 DISCORD_API = "https://discord.com/api/v10"
 
@@ -51,3 +53,51 @@ async def consume_entitlement(entitlement_id: str) -> None:
             if resp.status not in (200, 204):
                 text = await resp.text()
                 raise RuntimeError(f"Entitlement consume {resp.status}: {text}")
+            
+import os, time
+from typing import Dict, Tuple
+
+PREMIUM_SKU_ID = 1405934572436193462  # "premium"
+IS_DEV = os.getenv("ENV", "").lower() == "dev"
+
+# user_id -> (has_premium, expires_at_epoch)
+_premium_cache: Dict[int, Tuple[bool, float]] = {}
+
+def peek_premium(user_id: int) -> bool:
+    """Sync, non-blocking check used by cooldown decorators.
+    Returns cached value only; may be slightly stale."""
+    if IS_DEV:
+        return True
+    now = time.time()
+    cached = _premium_cache.get(user_id)
+    if not cached:
+        return False
+    has, exp = cached
+    # Only trust if still fresh
+    return has if exp > now else False
+
+async def has_premium(pool, user_id: int) -> bool:
+    """Authoritative async check; refreshes the cache (60s TTL)."""
+    if IS_DEV:
+        return True
+    now = time.time()
+    cached = _premium_cache.get(user_id)
+    if cached and cached[1] > now:
+        return cached[0]
+
+    async with pool.acquire() as con:
+        has = bool(
+            await con.fetchval(
+                """
+                SELECT 1
+                FROM entitlements
+                WHERE user_id=$1 AND sku_id=$2
+                  AND (expires_at IS NULL OR expires_at > NOW())
+                LIMIT 1
+                """,
+                user_id, PREMIUM_SKU_ID
+            )
+        )
+
+    _premium_cache[user_id] = (has, now + 60.0)  # 60s TTL
+    return has

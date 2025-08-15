@@ -220,7 +220,11 @@ class Admin(commands.Cog):
 
         async with self.bot.db_pool.acquire() as conn:
             # 1) Command prefix
-            await ctx.send("**1/7** What **command prefix** should I use? (e.g. `!`, `bc!`, `$`). Type `default` to use `bc!`.")
+            await ctx.send("**Welcome to the beenbag bot setup!!**\n"
+                           "Don't worry if you make a mistake, all of these setting can be changed later.\n"
+                           "See how in admin section of `!help`, after finishing setup\n"
+                           "It runs most smoothly if nothing else is said in the chat until it's over\n"
+                            "**1/7** What **command prefix** should I use? (e.g. `!`, `bc!`, `$`). Type `default` to use `bc!`.")
             msg = await self.bot.wait_for("message", check=check)
             raw = msg.content.strip()
             if raw.lower() == "default":
@@ -228,7 +232,7 @@ class Admin(commands.Cog):
             else:
                 command_prefix = sanitize_prefix(raw) or DEFAULT_PREFIX
                 if command_prefix == DEFAULT_PREFIX and raw.lower() != "default":
-                    await ctx.send("❌ Invalid prefix. Using default `bc!`.")
+                    await ctx.send("❌ Invalid prefix. Using default `!`.")
 
             # 2) Spawn channels
             await ctx.send("**2/7** Use `#` to mention the **channels for mob spawns** (space/comma separated), or type `none` to skip. Its reccomended to have a cooldown of about 2 seconds in these channels:")

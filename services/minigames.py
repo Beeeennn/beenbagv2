@@ -55,7 +55,7 @@ class PathButtons(discord.ui.View):
         self.collected = collected
         self.player_id = player_id
         self.db_pool = db_pool
-        self.death_path = random.randint(1, 4)
+        self.death_path = random.randint(1, 6)
         self.used_totem = used_totem
         self.player_totems = totems
         self.guild_id = guild_id

@@ -3,7 +3,7 @@ from services import crafting, shop, activities, inventory, fishing, barn,exp_di
 from utils.parsing import parse_item_and_qty, _norm_item_from_args
 from constants import BLOCKED_SHOP_ITEMS
 import discord
-
+from core.decorators import premium_cooldown
 class Game(commands.Cog):
     def __init__(self, bot):
         self.bot = bot  # expects bot.db_pool to be set elsewhere
@@ -28,6 +28,7 @@ class Game(commands.Cog):
         await achievements.open_achievements_menu(self.bot.db_pool, ctx, user.id)
     # ---------- Crafting ----------
     @commands.command(name="craft")
+    @commands.cooldown(1, 1, commands.BucketType.member)
     async def craft_cmd(self, ctx, *args):
         if not args:
             return await ctx.send(f"❌ Usage: `{ctx.clean_prefix}craft <tool> [tier]`")
@@ -51,6 +52,12 @@ class Game(commands.Cog):
             return await ctx.send("❌ You must specify a tool to craft.")
 
         await crafting.craft(ctx, self.bot.db_pool, tool, tier)
+    @craft_cmd.error
+    async def chop_error(self, ctx, error):
+        if isinstance(error, commands.CommandOnCooldown):
+            retry = int(error.retry_after)
+            return await ctx.send(f"This command is on cooldown. Try again in {retry} second{'s' if retry != 1 else ''}.")
+        raise error
 
     @commands.command(name="recipe")
     async def recipe(self, ctx, *args):
@@ -136,7 +143,7 @@ class Game(commands.Cog):
         raise error
 
     @commands.command(name="breed")
-    @commands.cooldown(5, 86400, commands.BucketType.member)  # 5 uses per day
+    @premium_cooldown(5, 86400, commands.BucketType.member) # 5 uses per day
     async def breed(self, ctx, *, mob: str):
         # services.barn.breed(pool, ctx, mob)
         await barn.breed(self.bot.db_pool, ctx, mob)
@@ -171,7 +178,7 @@ class Game(commands.Cog):
 
     # ---------- Activities ----------
     @commands.command(name="chop")
-    @commands.cooldown(1, 60, commands.BucketType.member)
+    @premium_cooldown(1, 60, commands.BucketType.member)
     async def chop(self, ctx):
         # services.activities.chop(pool, ctx)
         await activities.chop(self.bot.db_pool, ctx)
@@ -184,7 +191,7 @@ class Game(commands.Cog):
         raise error
 
     @commands.command(name="mine")
-    @commands.cooldown(1, 120, commands.BucketType.member)
+    @premium_cooldown(1, 120, commands.BucketType.member)
     async def mine(self, ctx):
         # services.activities.mine(pool, ctx)
         await activities.mine(self.bot.db_pool, ctx)
@@ -197,7 +204,7 @@ class Game(commands.Cog):
         raise error
 
     @commands.command(name="farm")
-    @commands.cooldown(1, 120, commands.BucketType.member)
+    @premium_cooldown(1, 120, commands.BucketType.member)
     async def farm(self, ctx):
         # services.activities.farm(pool, ctx)
         await activities.farm(self.bot.db_pool, ctx)
@@ -211,7 +218,7 @@ class Game(commands.Cog):
 
     # ---------- Fishing / Aquarium ----------
     @commands.command(name="fish")
-    @commands.cooldown(1, 90, commands.BucketType.member)
+    @premium_cooldown(1, 90, commands.BucketType.member)
     async def fish(self, ctx):
         # services.fishing.make_fish(pool, ctx, path)
         await fishing.make_fish(self.bot.db_pool, ctx, "assets/fish/")
@@ -224,16 +231,23 @@ class Game(commands.Cog):
         raise error
 
     @commands.command(name="aquarium", aliases=["aq"])
+    @premium_cooldown(5, 5, commands.BucketType.member)
     async def aquarium(self, ctx, *, who: str = None):
         # services.fishing.generate_aquarium(pool, ctx, who)
         await fishing.generate_aquarium(self.bot.db_pool, ctx, who)
 
     # ---------- Minigames ----------
     @commands.command(name="stronghold")
+    @premium_cooldown(1, 3600, commands.BucketType.member)
     async def stronghold(self, ctx):
         # services.minigames.c_stronghold(pool, ctx)
         await minigames.c_stronghold(self.bot.db_pool, ctx)
-
+    @stronghold.error
+    async def stronghold_error(self, ctx, error):
+        if isinstance(error, commands.CommandOnCooldown):
+            retry = int(error.retry_after)
+            return await ctx.send(f"This command is on cooldown. Try again in {retry} second{'s' if retry != 1 else ''}.")
+        raise error
 
 async def setup(bot):
     await bot.add_cog(Game(bot))

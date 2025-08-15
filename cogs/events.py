@@ -6,6 +6,7 @@ from utils.game_helpers import gain_exp,ensure_player,sucsac,lb_inc
 from tasks.spawns import start_all_guild_spawn_tasks, start_guild_spawn_task, stop_guild_spawn_task
 from tasks.fish_food import give_fish_food_task
 from services.discord_limits import call_with_gate
+from services.monetization import has_premium 
 from services import achievements,barn,statuses
 from datetime import datetime, timezone
 import random
@@ -14,11 +15,14 @@ import discord
 import asyncio
 from config import settings
 
-chat_xp_cd = commands.CooldownMapping.from_cooldown(
-    2,                # max tokens
-    1800.0,           # per 1800 seconds (30m)
-    commands.BucketType.member
-)
+BASE_RATE = 2
+BASE_PER  = 1800.0               # 30 minutes
+PREMIUM_FACTOR = 0.8             # 20% shorter window
+PREMIUM_PER = BASE_PER * PREMIUM_FACTOR  # 1440s (24 minutes)
+
+chat_xp_cd_base    = commands.CooldownMapping.from_cooldown(BASE_RATE, BASE_PER,  commands.BucketType.member)
+chat_xp_cd_premium = commands.CooldownMapping.from_cooldown(BASE_RATE, PREMIUM_PER, commands.BucketType.member)
+
 class Events(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -210,11 +214,17 @@ class Events(commands.Cog):
                 """,
                 message.author.id,guild_id
             )
-            user_id = message.author.id
-            bucket = chat_xp_cd.get_bucket(message)
+            # 1) Decide which cooldown mapping to use (async safe)
+            is_premium = await has_premium(self.bot.db_pool, message.author.id)
+            cd_map = chat_xp_cd_premium if is_premium else chat_xp_cd_base
+
+            # 2) Get bucket and update rate limit (SYNC)
+            bucket = cd_map.get_bucket(message)        # <-- not awaited
             can_gain = bucket.update_rate_limit() is None
+
             if can_gain:
-                await gain_exp(conn,self.bot,user_id,1,None,guild_id)
+                await gain_exp(conn, self.bot, message.author.id, 1, None, guild_id)
+        user_id = message.author.id
         # 0) Try to capture any active spawn in this channel
         name = message.content.strip().lower().replace(" ", "")
         now = datetime.now(timezone.utc)
