@@ -435,6 +435,7 @@ async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, notify: bool = 
 
 async def try_grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, *, notify: bool = True) -> Optional[int]:
     if ACHIEVEMENTS.get(key) is None:
+        print(f"Error getting achievement {key}")
         return None
     return await grant(pool, ctx, user_id, key, notify=notify)
 

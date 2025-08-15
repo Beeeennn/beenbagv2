@@ -243,13 +243,13 @@ class Events(commands.Cog):
             )
             if spawn and name == spawn["mob_name"].lower().replace(" ", ""):
                 # Got it first!
-                await achievements.try_grant(self.bot.db_pool,None, user_id, "mob_catch")
+                await achievements.try_grant(self.bot.db_pool,message, user_id, "mob_catch")
                 spawn_id = spawn["spawn_id"]
                 mob_name = spawn["mob_name"]
                 is_golden = (random.randint(1, 20) == 1)
                 sac = False
                 if MOBS[mob_name]["rarity"]  == 4:
-                    await achievements.try_grant(self.bot.db_pool, None, user_id, "epic_mob")
+                    await achievements.try_grant(self.bot.db_pool, message, user_id, "epic_mob")
                 # 1) Add to the barn (or sacrifice if full)
                 #    First ensure the player/barn rows exist:
                 await ensure_player(conn,message.author.id,guild_id)
