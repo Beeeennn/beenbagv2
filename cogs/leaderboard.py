@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Tuple
-
+import os
 import discord
 from discord import ui
 from discord.ext import commands
@@ -307,6 +307,35 @@ class Leaderboard(commands.Cog):
     @commands.command(name="exp", aliases=["experience", "level", "lvl"])
     async def exp_cmd(self,ctx, *, who: str = None):
         await exp_display.rank_cmd(self.bot.db_pool, ctx, who)
+
+    @commands.command()
+    async def setbackground(self, ctx, name: str):
+        filename = f"{name}.png"
+        path = os.path.join("assets", "others", "expbg", filename)
+
+        if not os.path.exists(path):
+            return await ctx.send("❌ That background doesn't exist.")
+
+        async with self.bot.db_pool.acquire() as conn:
+            # Ensure owned
+            owned = await conn.fetchval(
+                "SELECT 1 FROM user_backgrounds WHERE user_id=$1 AND guild_id=$2 AND background_name=$3",
+                ctx.author.id, ctx.guild.id, filename
+            )
+            if not owned:
+                return await ctx.send("❌ You don't own this background.")
+
+            await conn.execute(
+                """
+                INSERT INTO user_settings (user_id, guild_id, selected_background)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (user_id, guild_id)
+                DO UPDATE SET selected_background = EXCLUDED.selected_background
+                """,
+                ctx.author.id, ctx.guild.id, filename
+            )
+
+        await ctx.send(f"✅ Your background is now set to **{name}**.")
 
 async def setup(bot):
     await bot.add_cog(Leaderboard(bot))

@@ -1,7 +1,7 @@
 # cogs/levels.py
 import io
 from typing import Optional, Tuple
-
+import os
 import discord
 from discord.ext import commands
 
@@ -71,10 +71,7 @@ def _load_font(size: int) -> "ImageFont.FreeTypeFont":
     Drop a font in assets/fonts/ (e.g., Minecraftia.ttf or PressStart2P-Regular.ttf).
     """
     candidates = [
-        "assets/fonts/Minecraftia.ttf",
         "assets/fonts/PressStart2P-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "DejaVuSans-Bold.ttf",
     ]
     for path in candidates:
         try:
@@ -93,26 +90,40 @@ def _make_rank_card(
     rank: Optional[int],
     exp_into: int,
     exp_span: int,
+    background_name=None
 ):
     """
-    Return (rgba_bytes, (W,H)) for the rank card background with text and bars.
-    Background is a solid black canvas (boring).
+    Return (rgba_bytes, (W,H)) for the rank card.
+    All UI elements are drawn onto a transparent overlay and then
+    alpha-composited over the background (true overlay behavior).
     """
-    W, H = 1200, 400  # larger canvas => clearer text
-    bg = Image.new("RGBA", (W, H), (0, 0, 0, 255))  # solid black
+    W, H = 1200, 400
 
-    # Optional: glass panel to lift content slightly
-    panel = Image.new("RGBA", (W - 40, H - 40), (255, 255, 255, 28))
-    panel = panel.filter(ImageFilter.GaussianBlur(0.5))
-    bg.paste(panel, (20, 20), panel)
+    # 1) Load chosen background if it exists
+    bg = None
+    if background_name:
+        path = os.path.join("assets", "others", "expbg", background_name)
+        if os.path.exists(path):
+            bg = Image.open(path).convert("RGBA").resize((W, H))
 
-    # Fonts (BIG & clear; ensure you have a TTF!)
+    # 2) Fallback to black if not found
+    if bg is None:
+        bg = Image.new("RGBA", (W, H), (0, 0, 0, 255))
+
+    # --- Create a transparent overlay to draw UI on ---
+    overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    # Fonts
     font_big = _load_font(50)    # username
     font_med = _load_font(40)    # level/rank pill
     font_prog = _load_font(30)   # progress numbers
     font_small = _load_font(30)  # total EXP
 
-    draw = ImageDraw.Draw(bg)
+    # Panel (overlay, semi‑transparent)
+    # Using rounded rect so it looks nicer on photos
+    panel_bounds = (20, 20, W - 20, H - 20)
+    draw.rounded_rectangle(panel_bounds, radius=24, fill=(255, 255, 255, 28))
 
     # Username
     uname = member.display_name
@@ -122,16 +133,18 @@ def _make_rank_card(
     pill_y = 155
     pill_h = 76
 
-    def pill(x1, text):
+    def pill(x1: int, text: str) -> int:
         pad = 22
         tw = draw.textlength(text, font=font_med)
         w = int(tw + pad * 2)
         r = pill_h // 2
+        # pill background on overlay
         draw.rounded_rectangle(
             (x1, pill_y, x1 + w, pill_y + pill_h),
             radius=r,
             fill=(255, 255, 255, 48),
         )
+        # pill text
         draw.text(
             (x1 + pad, pill_y + (pill_h - font_med.size) // 2 - 2),
             text,
@@ -145,7 +158,7 @@ def _make_rank_card(
     if rank is not None:
         x = pill(x, f"Rank #{rank}")
 
-    # Progress bar
+    # Progress bar (drawn entirely on overlay)
     bar_x, bar_y, bar_w, bar_h = 330, 255, 800, 54
     draw.rounded_rectangle(
         (bar_x, bar_y, bar_x + bar_w, bar_y + bar_h),
@@ -162,7 +175,7 @@ def _make_rank_card(
             fill=(255, 255, 255, 220),
         )
 
-    prog_text = f"{_fmt_int(exp_into)} / {_fmt_int(exp_span)}"
+    prog_text = f"{_fmt_int(exp_into)}/{_fmt_int(exp_span)}"
     tw = draw.textlength(prog_text, font=font_prog)
     draw.text(
         (bar_x + bar_w - tw - 16, bar_y + (bar_h - font_prog.size) // 2 - 2),
@@ -179,7 +192,11 @@ def _make_rank_card(
         fill=(240, 240, 245, 255),
     )
 
-    return bg.tobytes(), (W, H)
+    # --- Composite overlay over background (true overlay, no overwrites) ---
+    composed = Image.alpha_composite(bg, overlay)
+
+    # Return raw RGBA bytes for later composition with avatar
+    return composed.tobytes(), (W, H)
 
 
 def _compose_with_avatar(
@@ -207,7 +224,11 @@ def _compose_with_avatar(
     out.seek(0)
     return out.getvalue()
 
-
+async def _fetch_selected_background(conn, guild_id, user_id):
+    return await conn.fetchval(
+        "SELECT selected_background FROM user_settings WHERE user_id=$1 AND guild_id=$2",
+        user_id, guild_id
+    )
 # ---------- Command entry ----------
 async def rank_cmd(pool, ctx, who):
     guild_id = ctx.guild.id if ctx.guild else None
@@ -222,7 +243,7 @@ async def rank_cmd(pool, ctx, who):
 
     async with pool.acquire() as conn:
         total_exp, server_rank = await _fetch_rank_and_exp(conn, guild_id, member.id)
-
+        bg_name = await _fetch_selected_background(conn, guild_id, member.id)
     level = get_level_from_exp(total_exp)
     into, span, _next_cap = _progress_tuple(total_exp, level)
 
@@ -245,7 +266,7 @@ async def rank_cmd(pool, ctx, who):
 
     # Build background + text
     bg_bytes, size_wh = _make_rank_card(
-        member, total_exp, level, server_rank, into, span
+        member, total_exp, level, server_rank, into, span, background_name=bg_name
     )
 
     # Avatar PNG
@@ -261,4 +282,5 @@ async def rank_cmd(pool, ctx, who):
 
     # One send: URL if public base, attachment otherwise
     em = discord.Embed(color=discord.Color.blurple())
+    em.set_footer(text="You can buy other backgrounds using !bg buy")  # NEW
     await send_embed_with_image(ctx, em, png_bytes, "rank.png", media_id)
