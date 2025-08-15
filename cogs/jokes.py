@@ -106,6 +106,9 @@ class Images(commands.Cog):
         await ctx.send(embed=embed, file=file)
     @baby.error
     async def baby_error(self, ctx, error):
+        if not isinstance(error, commands.CommandOnCooldown):
+            ctx.command.reset_cooldown(ctx)
+
         if isinstance(error, commands.CommandOnCooldown):
             await send_premium_cooldown_message(ctx, error)
 
