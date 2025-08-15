@@ -128,7 +128,7 @@ class Backgrounds(commands.Cog):
 
     @bg_group.command(name="buy")
     async def bg_buy(self, ctx: commands.Context):
-        """Open the background store with purchase buttons for each SKU (paginated)."""
+        """Open the background store with purchase buttons """
         async with self.bot.db_pool.acquire() as conn:
             rows = await conn.fetch(
                 """
@@ -182,14 +182,14 @@ class Backgrounds(commands.Cog):
         async with self.bot.db_pool.acquire() as conn:
             if sku_id:
                 rows = await conn.fetch(
-                    "SELECT sku_id, filename, consumable FROM background_skus WHERE sku_id = $1",
+                    "SELECT sku_id, filename FROM background_skus WHERE sku_id = $1",
                     sku_id,
                 )
                 if not rows:
                     return await ctx.send("❌ That SKU isn’t in the store.")
             else:
                 rows = await conn.fetch(
-                    "SELECT sku_id, filename, consumable FROM background_skus ORDER BY display_name NULLS LAST, filename"
+                    "SELECT sku_id, filename FROM background_skus ORDER BY display_name NULLS LAST, filename"
                 )
                 if not rows:
                     return await ctx.send("❌ No backgrounds are configured yet.")
@@ -217,7 +217,6 @@ class Backgrounds(commands.Cog):
         for r in rows:
             sku = r["sku_id"]
             filename = r["filename"]
-            consumable = bool(r["consumable"])
 
             # Check entitlement
             try:
@@ -229,14 +228,6 @@ class Backgrounds(commands.Cog):
             if not ent:
                 missing.append(filename)
                 continue
-
-            # Optionally consume consumables
-            if consumable and not ent.get("consumed"):
-                try:
-                    await consume_entitlement(ent["id"])
-                except Exception as e:
-                    missing.append(f"{filename} (consume failed: {e})")
-                    continue
 
             # Grant ownership
             async with self.bot.db_pool.acquire() as conn:
