@@ -2,6 +2,7 @@ from discord.ext import commands
 from services import crafting, shop, activities, inventory, fishing, barn,exp_display, progression, yt_link, minigames,achievements
 from utils.parsing import parse_item_and_qty, _norm_item_from_args
 from constants import BLOCKED_SHOP_ITEMS
+import discord
 
 class Game(commands.Cog):
     def __init__(self, bot):
@@ -13,6 +14,11 @@ class Game(commands.Cog):
         # Ensure tables + sync registry when the bot boots
         await achievements.ensure_schema(self.bot.db_pool)
         await achievements.sync_master(self.bot.db_pool)
+        activity = discord.Activity(type=discord.ActivityType.watching, name="your server")
+        await self.bot.change_presence(
+            status=discord.Status.online,   # online | idle | dnd | invisible
+            activity=activity
+        )
 
     @commands.command(name="achievements", aliases=["ach","achs"])
     async def achievements_cmd(self, ctx, *, who: str | None = None):

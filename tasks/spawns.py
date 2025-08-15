@@ -55,37 +55,80 @@ async def spawn_loop_for_guild(bot, guild_id: int):
             break
         except Exception:
             await asyncio.sleep(10)
+# tasks/spawns.py
+import asyncio
+import logging
+import random
+from datetime import datetime, timezone
+from services.discord_limits import call_with_gate
+
+# (Optional) per‑channel lock prevents bursts in the same channel
+_channel_locks = {}
+def _lock_for(chan_id: int):
+    _channel_locks.setdefault(chan_id, asyncio.Lock())
+    return _channel_locks[chan_id]
+
 async def watch_spawn_expiry(bot, spawn_id, channel_id, message_id, mob_name, expires_at):
-    # Sleep until the exact expiry time
-    now = datetime.now(timezone.utc)
-    delay = (expires_at - now).total_seconds()
-    if delay > 0:
-        await asyncio.sleep(delay)
+    """Sleeps until expiry, removes DB row if still active, deletes the spawn message via PartialMessage,
+    and posts a gentle 'escaped' notice — all behind rate-limit/backoff guards."""
+    try:
+        # Sleep until the exact expiry time (with a tiny random jitter so many tasks don't wake at once)
+        now = datetime.now(timezone.utc)
+        delay = max(0.0, (expires_at - now).total_seconds())
+        # Add 0–300ms jitter to de-sync bursts
+        delay += random.uniform(0, 0.3)
+        if delay > 0:
+            await asyncio.sleep(delay)
 
-    # After sleeping, check if it's still uncaught
-    async with bot.db_pool.acquire() as conn:
-        still_there = await conn.fetchval(
-            "SELECT 1 FROM active_spawns WHERE spawn_id = $1", spawn_id
-        )
-        if not still_there:
-            return  # someone caught it already
+        # Check DB — bail if already caught
+        async with bot.db_pool.acquire() as conn:
+            still_there = await conn.fetchval(
+                "SELECT 1 FROM active_spawns WHERE spawn_id = $1",
+                spawn_id
+            )
+            if not still_there:
+                return
 
-        # Remove the DB entry
-        await conn.execute(
-            "DELETE FROM active_spawns WHERE spawn_id = $1", spawn_id
-        )
+            # Remove the DB entry first (idempotent)
+            await conn.execute("DELETE FROM active_spawns WHERE spawn_id = $1", spawn_id)
 
-    # Try to delete the original image message
-    channel = bot.get_channel(channel_id)
-    if channel:
-        try:
-            orig = await channel.fetch_message(message_id)
-            await orig.delete()
-        except discord.NotFound:
-            pass
+        # Get channel (prefer cache, otherwise fetch once)
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await call_with_gate(bot.fetch_channel(channel_id), op_name="fetch_channel")
+            except Exception as e:
+                logging.warning(f"[spawn_expiry] cannot fetch channel {channel_id}: {e}")
+                return
 
-        # Announce the escape
-        await channel.send(f"**{mob_name}** escaped, maybe next time")
+        # Serialize operations in this channel to avoid mini-stampedes
+        async with _lock_for(channel.id):
+            # 1) Delete the original message via PartialMessage (NO fetch)
+            try:
+                pm = channel.get_partial_message(message_id)
+                await call_with_gate(pm.delete(), op_name="spawn_delete")
+            except Exception as e:
+                # Not fatal (it may already be gone, or permissions missing)
+                logging.info(f"[spawn_expiry] delete skipped/failure for {message_id}: {e}")
+
+            # 2) Post a lightweight announcement (kept last; if we're Cloudflared, backoff will handle)
+            try:
+                await call_with_gate(
+                    channel.send(f"**{mob_name}** escaped, maybe next time", delete_after=60),
+                    op_name="spawn_announce"
+                )
+            except Exception as e:
+                logging.info(f"[spawn_expiry] announce failed in {channel.id}: {e}")
+
+            # Small spacing to be nice to the bucket if many expiries are queued
+            await asyncio.sleep(0.25)
+
+    except asyncio.CancelledError:
+        # Task cancelled cleanly (e.g., shutdown)
+        raise
+    except Exception as e:
+        logging.exception(f"[spawn_expiry] unexpected error for spawn_id={spawn_id}: {e}")
+    
 async def spawn_once_in_channel(bot, chan):
     # ---- pick a mob exactly like before ----
     mob_names_all = list(MOBS.keys())

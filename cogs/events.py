@@ -5,7 +5,8 @@ from utils.prefixes import get_cached_prefix
 from utils.game_helpers import gain_exp,ensure_player,sucsac,lb_inc
 from tasks.spawns import start_all_guild_spawn_tasks, start_guild_spawn_task, stop_guild_spawn_task
 from tasks.fish_food import give_fish_food_task
-from services import achievements,barn
+from services.discord_limits import call_with_gate
+from services import achievements,barn,statuses
 from datetime import datetime, timezone
 import random
 from constants import MOBS,RARITIES,COLOR_MAP
@@ -31,7 +32,7 @@ class Events(commands.Cog):
         from services import achievements
         await achievements.ensure_schema(self.bot.db_pool)
         await achievements.sync_master(self.bot.db_pool)
-
+        self.bot.loop.create_task(statuses.cycle_presence(self.bot))
         # start spawn tasks only in the right environment
         for g in self.bot.guilds:
             if settings.IS_DEV:
@@ -189,20 +190,12 @@ class Events(commands.Cog):
                 guild_id
             )
         react_ids = react_ids or []
-
-        if message.channel.id in react_ids:
-            if message.author.id == 1381277906017189898:
-                try: await message.add_reaction("🙄")
-                except Exception: pass
-            elif message.author.id == 1376308591115501618:
-                try: await message.add_reaction("🐈")
-                except Exception: pass
         txt = (message.content or "").casefold()
         if "been" in txt:
             try:
-                await message.add_reaction("👀")
-            except Exception:
-                pass             
+                await call_with_gate(message.add_reaction("👀"), op_name="sideye_react")
+                await asyncio.sleep(0.1)  # micro‑spacing helps a lot
+            except Exception: pass           
         if message.author.bot:
             return
 
