@@ -5,3 +5,4 @@ pillow
 pytz
 dateparser
 python-dotenv
+requests
