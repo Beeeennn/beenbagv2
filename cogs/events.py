@@ -16,7 +16,7 @@ from config import settings
 chat_xp_cd = commands.CooldownMapping.from_cooldown(
     2,                # max tokens
     1800.0,           # per 1800 seconds (30m)
-    commands.BucketType.user
+    commands.BucketType.member
 )
 class Events(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -146,7 +146,7 @@ class Events(commands.Cog):
         embed = discord.Embed(
             title=f"Thanks for inviting {self.bot.user.name}! 🎉",
             description=(
-                f"**First step:** run `{bot_mention}setup`.\n"
+                f"**First step:** run `!setup`.\n"
                 f"This sets which channels I use for spawns, logs, and announcements."
             ),
             color=discord.Color.blurple()
@@ -154,13 +154,13 @@ class Events(commands.Cog):
         embed.add_field(
             name="Useful commands",
             value=(
-                f"• `{bot_mention}help` — see everything I can do\n"
-                f"• `{bot_mention}achievements` — your progress & badges\n"
-                f"• `{bot_mention}credits` — attributions & licensing"
+                f"• `!help` — see everything I can do\n"
+                f"• `!achievements` — your progress & badges\n"
+                f"• `!credits` — attributions & licensing"
             ),
             inline=False
         )
-        embed.set_footer(text=f"Prefix here is `{pref}`.")
+        embed.set_footer(text=f"Prefix here is `!`.")
 
         # send it (or DM the owner if we can't speak anywhere)
         try:
@@ -280,7 +280,7 @@ class Events(commands.Cog):
                         """
                 INSERT INTO barn (user_id, guild_id, mob_name, is_golden, count)
                 VALUES ($1, $4, $2, $3, 1)
-                ON CONFLICT (user_id, guild_id, mob_name, is_golden)
+                ON CONFLICT (guild_id, user_id, mob_name, is_golden)
                 DO UPDATE SET count = barn.count + 1
                         """,
                         message.author.id, mob_name, is_golden, guild_id

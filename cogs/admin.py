@@ -231,22 +231,26 @@ class Admin(commands.Cog):
                     await ctx.send("❌ Invalid prefix. Using default `bc!`.")
 
             # 2) Spawn channels
-            await ctx.send("**2/7** Mention the **channels for mob spawns** (space/comma separated), or type `none` to skip. Its reccomended to have a cooldown of about 2 seconds in these channels:")
+            await ctx.send("**2/7** Use `#` to mention the **channels for mob spawns** (space/comma separated), or type `none` to skip. Its reccomended to have a cooldown of about 2 seconds in these channels:")
             msg = await self.bot.wait_for("message", check=check)
             spawn_channels = parse_channel_ids_any(self.bot, msg) if msg.content.strip().lower() != "none" else []
 
             # 3) Announce channel
-            await ctx.send("**3/7** Mention the **announce channel** (level ups, welcomes), or type `none` to skip:")
+            await ctx.send("**3/7** Use `#` to mention the **announce channel** (level ups, welcomes), or type `none` to skip:")
             msg = await self.bot.wait_for("message", check=check)
             announce_channel_id = parse_one_channel_id_any(self.bot, msg) if msg.content.strip().lower() != "none" else None
 
+            await ctx.send("**4/8** Enable **level-up announcements**? (`yes`/`no`) Default: `yes`")
+            msg = await self.bot.wait_for("message", check=check)
+            lvl_ann = msg.content.strip().lower() not in {"no", "n", "off", "false", "0"}
+
             # 4) Link channels
-            await ctx.send("**4/7** Mention the **link channels** (space/comma) where the bot can send links, or type `none` to skip:")
+            await ctx.send("**4/7** Use `#` to mention the **link channels** (space/comma) where the bot can send links, or type `none` to skip:")
             msg = await self.bot.wait_for("message", check=check)
             link_channel_ids = parse_channel_ids_any(self.bot, msg) if msg.content.strip().lower() != "none" else []
 
             # 5) React channels
-            await ctx.send("**5/7** Mention the **react channels** (space/comma) where the bot can auto-react, or type `none` to skip:")
+            await ctx.send("**5/7** Use `#` to mention the **react channels** (space/comma) where the bot can auto-react, or type `none` to skip:")
             msg = await self.bot.wait_for("message", check=check)
             react_channel_ids = parse_channel_ids_any(self.bot, msg) if msg.content.strip().lower() != "none" else []
 
@@ -260,7 +264,7 @@ class Admin(commands.Cog):
             msg = await self.bot.wait_for("message", check=check)
             log_channel_id = parse_one_channel_id_any(self.bot, msg) if msg.content.strip().lower() != "none" else None
 
-            # Upsert guild_settings (including command_prefix)
+            
             await conn.execute(
                 """
                 INSERT INTO guild_settings (
@@ -270,15 +274,17 @@ class Admin(commands.Cog):
                     react_channel_ids,
                     game_channel_ids,
                     log_channel_id,
-                    command_prefix
-                ) VALUES ($1, $2, $3::bigint[], $4::bigint[], $5::bigint[], $6, $7)
+                    command_prefix,
+                    level_announcements_enabled
+                ) VALUES ($1, $2, $3::bigint[], $4::bigint[], $5::bigint[], $6, $7, $8)
                 ON CONFLICT (guild_id) DO UPDATE
-                SET announce_channel_id = EXCLUDED.announce_channel_id,
-                    link_channel_ids    = EXCLUDED.link_channel_ids,
-                    react_channel_ids   = EXCLUDED.react_channel_ids,
-                    game_channel_ids    = EXCLUDED.game_channel_ids,
-                    log_channel_id      = EXCLUDED.log_channel_id,
-                    command_prefix      = EXCLUDED.command_prefix
+                SET announce_channel_id           = EXCLUDED.announce_channel_id,
+                    link_channel_ids              = EXCLUDED.link_channel_ids,
+                    react_channel_ids             = EXCLUDED.react_channel_ids,
+                    game_channel_ids              = EXCLUDED.game_channel_ids,
+                    log_channel_id                = EXCLUDED.log_channel_id,
+                    command_prefix                = EXCLUDED.command_prefix,
+                    level_announcements_enabled   = EXCLUDED.level_announcements_enabled
                 """,
                 guild_id,
                 announce_channel_id,
@@ -287,8 +293,8 @@ class Admin(commands.Cog):
                 game_channel_ids,
                 log_channel_id,
                 command_prefix,
+                lvl_ann,
             )
-
             # Replace spawn channels
             await conn.execute("DELETE FROM guild_spawn_channels WHERE guild_id = $1", guild_id)
             for ch_id in spawn_channels:
@@ -355,6 +361,31 @@ class Admin(commands.Cog):
         await warm_prefix_cache(self.bot.db_pool)
 
         await ctx.send(f"✅ Prefix updated to **`{prefix}`**. You can now use `{prefix}help`.")
+    
+    @commands.command(name="levelannounce", aliases=["levelsannounce","togglelevels"])
+    @commands.has_guild_permissions(manage_guild=True)
+    @commands.guild_only()
+    async def level_announce(self, ctx: commands.Context, state: str):
+        s = state.strip().lower()
+        if s in {"on","enable","enabled","true","yes","y","1"}:
+            flag = True
+        elif s in {"off","disable","disabled","false","no","n","0"}:
+            flag = False
+        else:
+            return await ctx.send("Usage: `levelannounce <on|off>`")
+
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO guild_settings (guild_id, level_announcements_enabled)
+                VALUES ($1, $2)
+                ON CONFLICT (guild_id)
+                DO UPDATE SET level_announcements_enabled = EXCLUDED.level_announcements_enabled
+                """,
+                ctx.guild.id, flag
+            )
+
+        await ctx.send(f"✅ Level-up announcements are now **{'enabled' if flag else 'disabled'}**.")
 
     # ---------- Logs channel ----------
     @commands.command(name="setlogs", aliases=["setlog", "logs"])

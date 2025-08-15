@@ -94,7 +94,7 @@ class Game(commands.Cog):
         raise error
 
     @commands.command(name="breed")
-    @commands.cooldown(5, 86400, commands.BucketType.user)  # 5 uses per day
+    @commands.cooldown(5, 86400, commands.BucketType.member)  # 5 uses per day
     async def breed(self, ctx, *, mob: str):
         # services.barn.breed(pool, ctx, mob)
         await barn.breed(self.bot.db_pool, ctx, mob)
@@ -129,7 +129,7 @@ class Game(commands.Cog):
 
     # ---------- Activities ----------
     @commands.command(name="chop")
-    @commands.cooldown(1, 60, commands.BucketType.user)
+    @commands.cooldown(1, 60, commands.BucketType.member)
     async def chop(self, ctx):
         # services.activities.chop(pool, ctx)
         await activities.chop(self.bot.db_pool, ctx)
@@ -142,7 +142,7 @@ class Game(commands.Cog):
         raise error
 
     @commands.command(name="mine")
-    @commands.cooldown(1, 120, commands.BucketType.user)
+    @commands.cooldown(1, 120, commands.BucketType.member)
     async def mine(self, ctx):
         # services.activities.mine(pool, ctx)
         await activities.mine(self.bot.db_pool, ctx)
@@ -155,7 +155,7 @@ class Game(commands.Cog):
         raise error
 
     @commands.command(name="farm")
-    @commands.cooldown(1, 120, commands.BucketType.user)
+    @commands.cooldown(1, 120, commands.BucketType.member)
     async def farm(self, ctx):
         # services.activities.farm(pool, ctx)
         await activities.farm(self.bot.db_pool, ctx)
@@ -169,7 +169,7 @@ class Game(commands.Cog):
 
     # ---------- Fishing / Aquarium ----------
     @commands.command(name="fish")
-    @commands.cooldown(1, 90, commands.BucketType.user)
+    @commands.cooldown(1, 90, commands.BucketType.member)
     async def fish(self, ctx):
         # services.fishing.make_fish(pool, ctx, path)
         await fishing.make_fish(self.bot.db_pool, ctx, "assets/fish/")

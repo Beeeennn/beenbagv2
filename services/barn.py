@@ -50,13 +50,20 @@ async def sac(pool, ctx, mob_name: str):
             await achievements.try_grant(pool, ctx, user_id, "sac")
         if have > 1:
             await conn.execute(
-                "UPDATE barn SET count = count - 1 WHERE user_id=$1 AND guild_id = $2 AND mob_name=$3",
-                user_id, guild_id, key
+                """
+                UPDATE barn
+                SET count = count - 1
+                WHERE user_id=$1 AND guild_id=$2 AND mob_name=$3 AND is_golden=$4
+                """,
+                user_id, guild_id, key, is_gold
             )
         else:
             await conn.execute(
-                "DELETE FROM barn WHERE user_id=$1 AND guild_id = $2 AND mob_name = $3",
-                user_id, guild_id, key
+                """
+                DELETE FROM barn
+                WHERE user_id=$1 AND guild_id=$2 AND mob_name=$3 AND is_golden=$4
+                """,
+                user_id, guild_id, key, is_gold
             )
         await sucsac(ctx,ctx.author,mob_name,is_gold,"",conn)
 

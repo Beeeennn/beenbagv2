@@ -216,6 +216,7 @@ async def gain_exp(conn, bot, user_id: int, exp_gain: int, message=None, guild_i
     # --- role updates should not depend on "message" ---
     guild = None
     member = None
+
     if message and message.guild:
         guild = message.guild
         member = guild.get_member(user_id)
@@ -248,13 +249,17 @@ async def gain_exp(conn, bot, user_id: int, exp_gain: int, message=None, guild_i
                 new_role = guild.get_role(role_id)
                 if new_role:
                     await member.add_roles(new_role, reason="Leveled up")
-
+    level_ann = await conn.fetchval(
+        "SELECT COALESCE(level_announcements_enabled, TRUE) FROM guild_settings WHERE guild_id=$1",
+        guild_id
+    ) or True
     # Announce if possible
     text = f"🎉 <@{user_id}> leveled up to **Level {new_lvl}**!"
-    if announce_ch:
-        await announce_ch.send(text)
-    elif message:
-        await message.channel.send(text)
+    if level_ann:
+        if announce_ch:
+            await announce_ch.send(text)
+        elif message:
+            await message.channel.send(text)
 # utils/game_helpers.py
 async def ensure_account(conn, user_id: int, guild_id: int):
     await conn.execute("""
