@@ -23,7 +23,7 @@ class Events(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._ready_once = False
-
+        self._presence_task_started = False
     @commands.Cog.listener()
     async def on_ready(self):
         print(f"✅ Logged in as {self.bot.user} ({self.bot.user.id})")
@@ -32,7 +32,9 @@ class Events(commands.Cog):
         from services import achievements
         await achievements.ensure_schema(self.bot.db_pool)
         await achievements.sync_master(self.bot.db_pool)
-        self.bot.loop.create_task(statuses.cycle_presence(self.bot))
+        if not self._presence_task_started:
+            asyncio.create_task(statuses.cycle_presence(self.bot))
+            self._presence_task_started = True
         # start spawn tasks only in the right environment
         for g in self.bot.guilds:
             if settings.IS_DEV:

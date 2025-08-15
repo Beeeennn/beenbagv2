@@ -54,8 +54,28 @@ class Game(commands.Cog):
 
     @commands.command(name="recipe")
     async def recipe(self, ctx, *args):
-        # services.crafting.recipe(ctx, args)
-        await crafting.recipe(ctx, args)
+        if not args:
+            return await ctx.send(f"❌ Usage: `{ctx.clean_prefix}craft <tool> [tier]`")
+
+        # list of valid tier names (lowercase)
+        valid_tiers = {"wood", "stone", "iron", "gold", "diamond"}
+
+        args = list(args)
+        tier = None
+        tool_parts = []
+
+        for arg in args:
+            if tier is None and arg.lower() in valid_tiers:
+                tier = arg.lower()
+            else:
+                tool_parts.append(arg)
+
+        tool = "_".join(tool_parts).lower()
+
+        if not tool:
+            return await ctx.send("❌ You must specify a tool to get the recipe of.")
+
+        await crafting.recipe(ctx, self.bot.db_pool, tool, tier)
 
     @recipe.error
     async def recipe_error(self, ctx, error):

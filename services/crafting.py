@@ -85,27 +85,7 @@ async def craft(ctx, pool, tool: str, tier: str | None):
     await ctx.send(f"🔨 You crafted a **{tier.title()} {t.replace('_', ' ').title()}** with {uses} uses!")
 
 
-async def recipe(ctx, args):
-    if not args:
-        return await ctx.send(f"❌ Usage: `{ctx.clean_prefix}recipe <tool> [tier]`")
-
-    # Build tool name from all but last arg; tier is last arg if 2+ args
-    if len(args) == 1:
-        tool_raw = args[0]
-        tier = None
-    else:
-        tool_raw = "_".join(args[:-1])
-        tier = args[-1].lower()
-
-    tool = tool_raw.replace(" ", "_").lower()
-
-    # If it’s the fishing rod, force tier to “wood”
-    if tool in ("fishing_rod", "fishingrod", "fishing","rod"):
-        tool = "fishing_rod"
-
-    if tier is None:
-        return await ctx.send("❌ You must specify a tier for that tool.")
-
+async def recipe(ctx, tool, tier):
     key = (tool, tier)
     if key not in CRAFT_RECIPES:
         return await ctx.send(f"❌ Invalid recipe. Try `{ctx.clean_prefix}recipe pickaxe iron` or `{ctx.clean_prefix}recipe totem`.")

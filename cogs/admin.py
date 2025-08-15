@@ -165,7 +165,7 @@ class Admin(commands.Cog):
                 ctx.guild.id
             )
         await ctx.send("✅ Welcome messages **disabled** for this server.")
-    @commands.command(name="addmilestone", help="Set a level → role milestone. Usage: addmilestone <level> <@role>")
+    @commands.command(name="addmilestone")
     @commands.has_guild_permissions(manage_guild=True)
     async def add_milestone(self, ctx: commands.Context, level: int, role: discord.Role):
         """Admin-only: map a level to a role in guild_level_roles."""
@@ -195,7 +195,7 @@ class Admin(commands.Cog):
         if warn:
             msg += f"\n{warn}"
         await ctx.send(msg)
-    @commands.command(name="removemilestone", help="Remove a level → role milestone. Usage: removemilestone <level>")
+    @commands.command(name="removemilestone")
     @commands.has_guild_permissions(manage_guild=True)
     async def remove_milestone(self, ctx: commands.Context, level: int):
         async with self.bot.db_pool.acquire() as conn:
@@ -313,7 +313,9 @@ class Admin(commands.Cog):
             "• link channels saved\n"
             "• react channels saved\n"
             "• game channels saved\n"
-            "• log channel saved"
+            "• log channel saved\n"
+            "**NEXT STEPS:**"
+            f"• use `{command_prefix}addmilestione <level> <@role>` to add roles when a user gets to a certain level"
         )
 
         # refresh this guild's spawner to pick up changes
