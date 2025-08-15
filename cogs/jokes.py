@@ -6,6 +6,7 @@ from typing import Optional
 import discord
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFilter
+from core.decorators import *
 
 NUM_RE = re.compile(r"^\d*\.?\d+$")
 
@@ -39,6 +40,7 @@ class Images(commands.Cog):
         self.bot = bot
 
     @commands.command(name="baby")
+    @premium_fixed_cooldown(free_seconds=600,premium_seconds=5,bucket=commands.BucketType.member)
     async def baby(self, ctx: commands.Context, *args: str):
         """
         Usage:
@@ -102,6 +104,10 @@ class Images(commands.Cog):
         # Send embed with attachment
         file = discord.File(buf, filename="baby.png")
         await ctx.send(embed=embed, file=file)
+    @baby.error
+    async def baby_error(self, ctx, error):
+        if isinstance(error, commands.CommandOnCooldown):
+            await send_premium_cooldown_message(ctx, error)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Images(bot))
