@@ -42,9 +42,9 @@ class Images(commands.Cog):
     async def baby(self, ctx: commands.Context, *args: str):
         """
         Usage:
-          !baby @parent1 @parent2
-          !baby @parent1 0.4 @parent2          # optional scale (0.1–0.9)
-          !baby 0.5 @parent1 @parent2          # number can be anywhere
+        !baby @parent1 @parent2
+        !baby @parent1 0.4 @parent2          # optional scale (0.1–0.9)
+        !baby 0.5 @parent1 @parent2          # number can be anywhere
         """
         # Parse mentions (first two are used)
         mentions = ctx.message.mentions
@@ -63,7 +63,6 @@ class Images(commands.Cog):
                     pass
         if scale is None:
             scale = 0.45
-        # clamp to a sensible range
         scale = max(0.15, min(scale, 0.9))
 
         # Fetch avatars
@@ -81,17 +80,28 @@ class Images(commands.Cog):
         mask = _circular_feather_mask(overlay.size, feather_ratio=0.12)
         overlay.putalpha(mask)
 
-        # Position: centered (tweak Y to taste)
+        # Position overlay in the center (adjust y for different placement)
         x = (base.width - ow) // 2
         y = (base.height - ow) // 2
         composed = base.copy()
         composed.alpha_composite(overlay, (x, y))
 
-        # Save and send
+        # Save to buffer
         buf = BytesIO()
         composed.save(buf, format="PNG")
         buf.seek(0)
-        await ctx.send(file=discord.File(buf, filename="baby.png"))
+
+        # Create embed
+        embed = discord.Embed(
+            title="👶 It's a baby!",
+            description=f"{p1.display_name} + {p2.display_name} = ❤️",
+            color=discord.Color.pink()
+        )
+        embed.set_image(url="attachment://baby.png")
+
+        # Send embed with attachment
+        file = discord.File(buf, filename="baby.png")
+        await ctx.send(embed=embed, file=file)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Images(bot))
