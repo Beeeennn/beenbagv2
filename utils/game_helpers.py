@@ -252,7 +252,7 @@ async def gain_exp(conn, bot, user_id: int, exp_gain: int, message=None, guild_i
     level_ann = await conn.fetchval(
         "SELECT COALESCE(level_announcements_enabled, TRUE) FROM guild_settings WHERE guild_id=$1",
         guild_id
-    ) or True
+    )
     # Announce if possible
     text = f"🎉 <@{user_id}> leveled up to **Level {new_lvl}**!"
     if level_ann:

@@ -13,7 +13,7 @@ class BeenBag(commands.Bot):
         kwargs.setdefault("intents", discord.Intents.default())
         kwargs["intents"].message_content = True  # if you use prefix cmds
         kwargs.setdefault("command_prefix", lambda b, m: commands.when_mentioned_or("!")(b, m))
-
+        kwargs.setdefault("strip_after_prefix", True)
         super().__init__(**kwargs)
         self.db_pool = db_pool
         self.state = {}              # <-- so tasks/spawns.py can use bot.state

@@ -23,11 +23,13 @@ def sanitize_prefix(raw: str | None) -> str | None:
     return s
 async def dynamic_prefix(bot, message: discord.Message) -> List[str]:
     """
-    Returns a list of valid prefixes for the given guild/message.
-    Always includes mention prefixes.
+    Returns valid prefixes for this message/guild.
+    Supports mention prefixes and both '<prefix>' and '<prefix> '.
     """
     base_prefix = "!"
     if message.guild:
-        base_prefix = get_cached_prefix(message.guild.id)
+        # normalize in case someone stored it with spaces
+        base_prefix = (get_cached_prefix(message.guild.id) or "!").strip()
 
-    return commands.when_mentioned_or(base_prefix)(bot, message)
+    # allow "<prefix>" and "<prefix> " (with a single trailing space)
+    return commands.when_mentioned_or(base_prefix, f"{base_prefix} ")(bot, message)
