@@ -85,7 +85,7 @@ import asyncpg
 import aiohttp
 
 APP_ID = int(os.environ["APPLICATION_ID"])         # your bot application id
-BOT_TOKEN = os.environ["DISCORD_TOKEN"]            # your bot token
+BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]            # your bot token
 PREMIUM_SKU_ID = 1405934572436193462               # your Premium SKU
 IS_DEV = os.getenv("ENV", "").lower() == "dev"
 
