@@ -216,7 +216,7 @@ class Events(commands.Cog):
             )
             # 1) Decide which cooldown mapping to use (async safe)
             is_premium = await has_premium(self.bot.db_pool, message.author.id)
-            cd_map = chat_xp_cd_premium if is_premium else chat_xp_cd_base
+            cd_map = chat_xp_cd_base
 
             # 2) Get bucket and update rate limit (SYNC)
             bucket = cd_map.get_bucket(message)        # <-- not awaited

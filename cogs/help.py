@@ -226,6 +226,11 @@ HELP_TEXTS = {
         "usage": "linkyt [channel display name e.g.Beenn]",
         "aliases": [],
     },
+    "mcprofile": {
+        "desc": "Shows info about a minecraft profile",
+        "usage": "mcprofile [java_username]",
+        "aliases": [],
+    },   
     #################### LEADERBOARDS ###################
     "lb": {
         "desc": "Show a menu of different leaderboards",
@@ -312,6 +317,7 @@ HELP_CATEGORIES = {
     "credits": "General",
     "yt": "General",
     "linkyt": "General",
+    "mcprofile":"General"
 }
 
 CATEGORY_ORDER = ["Game", "Admin", "Leaderboards", "General", "Other"]
