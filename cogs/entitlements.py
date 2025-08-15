@@ -17,6 +17,8 @@ class EntitlementSync(commands.Cog):
 
     @tasks.loop(seconds=SYNC_EVERY_SECONDS)
     async def sync_loop(self):
+        if IS_DEV:
+            return
         try:
             await sync_entitlements(self.bot.db_pool)
             logging.info("[entitlements] sync complete")

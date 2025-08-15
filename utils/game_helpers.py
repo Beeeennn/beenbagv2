@@ -355,16 +355,16 @@ async def get_items(conn,user_id, item,guild_id:int):
     else:
         return row["quantity"]
 
-async def give_mob(conn,user_id, mob,guild_id):
+async def give_mob(conn,user_id, mob,guild_id,is_golden = False):
     key = mob.title()
     await conn.execute(
         """
         INSERT INTO barn (user_id, guild_id, mob_name, is_golden, count)
-        VALUES ($1, $2, $3, false, 1)
-        ON CONFLICT (user_id, mob_name, is_golden)
-        DO UPDATE SET count = barn.count + 1;
+        VALUES ($1, $2, $3, $4, 1)
+        ON CONFLICT (guild_id, user_id, mob_name, is_golden)
+        DO UPDATE SET count = barn.count + 1
         """,
-        user_id, guild_id, key
+        user_id, guild_id, mob, is_golden
     )
     # 7) Fetch new total
     new_count = await conn.fetchval(

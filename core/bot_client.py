@@ -43,7 +43,7 @@ class BeenBag(commands.Bot):
             else:
                 raise
 
-        for ext in ("cogs.entitlements","cogs.help","cogs.admin","cogs.events","cogs.general","cogs.game","cogs.leaderboard", "cogs.background"):
+        for ext in ("cogs.mcprofile","cogs.entitlements","cogs.help","cogs.admin","cogs.events","cogs.general","cogs.game","cogs.leaderboard", "cogs.background"):
             try:
                 await self.load_extension(ext)
             except Exception:
