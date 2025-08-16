@@ -206,19 +206,7 @@ async def sync_entitlements(pool: "asyncpg.Pool"):
         current.append((user_id, expires_at))
 
     logging.info("[entitlements] matched %d rows for SKU %s", len(current), premium_sku)
-    # After building `current` and before leaving sync_entitlements(...)
-    now_has = {u for (u, _) in current}
 
-    # Upserts already done here...
-
-    # Cache warm: mark current holders as True
-    for uid in now_has:
-        _cache_put(uid, True)
-
-    # Cache warm: mark revoked/missing as False (short TTL)
-    to_revoke = existing - now_has
-    for uid in to_revoke:
-        _cache_put(uid, False, ttl=CACHE_TTL_SECONDS)
 
     # Reconcile DB
     async with pool.acquire() as con:
@@ -239,7 +227,19 @@ async def sync_entitlements(pool: "asyncpg.Pool"):
 
             # also clean expired (belt-and-braces)
             await con.execute("DELETE FROM premium_users WHERE expires_at IS NOT NULL AND expires_at <= NOW()")
+    # After building `current` and before leaving sync_entitlements(...)
+    now_has = {u for (u, _) in current}
 
+    # Upserts already done here...
+
+    # Cache warm: mark current holders as True
+    for uid in now_has:
+        _cache_put(uid, True)
+
+    # Cache warm: mark revoked/missing as False (short TTL)
+    to_revoke = existing - now_has
+    for uid in to_revoke:
+        _cache_put(uid, False, ttl=CACHE_TTL_SECONDS)
     # clear cache for any user we touched
     for user_id, _ in current:
         _premium_cache.pop(user_id, None)
