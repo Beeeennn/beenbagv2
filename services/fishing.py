@@ -244,3 +244,68 @@ async def generate_aquarium(pool, ctx, who):
 
     # ✅ URL in prod / tunnel, attachment in local
     await _send_embed_with_image(ctx, embed, image_bytes, "aquarium.png", media_id)
+
+async def missing_fish(db_pool, ctx, who: str | None = None):
+    """Show which fish types, base colours, and pattern colours you're missing in your aquarium."""
+    guild_id = gid_from_ctx(ctx)
+
+    # whose aquarium?
+    if who is None:
+        member = ctx.author
+    else:
+        member = await resolve_member(ctx, who)
+        if member is None:
+            return await ctx.send("Member not found.")
+    user_id = member.id
+
+    async with db_pool.acquire() as con:
+        rows = await con.fetch(
+            """
+            SELECT color1, color2, type
+            FROM aquarium
+            WHERE user_id = $1 AND guild_id = $2 AND time_caught >= NOW() - INTERVAL '1 day'
+            ORDER BY time_caught DESC
+            LIMIT 30
+            """,
+            user_id, guild_id
+        )
+
+    owned_base    = {r["color1"] for r in rows}
+    owned_pattern = {r["color2"] for r in rows}
+    owned_types   = {r["type"] for r in rows}
+
+    all_types   = set(FISHTYPES)
+    all_colors  = set(MINECRAFT_COLORS.keys())
+
+    missing_types    = sorted(all_types - owned_types)
+    missing_base     = sorted(all_colors - owned_base)
+    missing_pattern  = sorted(all_colors - owned_pattern)
+
+    embed = discord.Embed(
+        title=f"{member.display_name}'s Missing Fish",
+        description="Here are the fish attributes you still need to collect:"
+    )
+
+    if missing_types:
+        embed.add_field(
+            name=f"Missing Types ({len(missing_types)})",
+            value=", ".join(missing_types),
+            inline=False
+        )
+    if missing_base:
+        embed.add_field(
+            name=f"Missing Base Colours ({len(missing_base)})",
+            value=", ".join(missing_base),
+            inline=False
+        )
+    if missing_pattern:
+        embed.add_field(
+            name=f"Missing Pattern Colours ({len(missing_pattern)})",
+            value=", ".join(missing_pattern),
+            inline=False
+        )
+
+    if not (missing_types or missing_base or missing_pattern):
+        embed.description = f"✅ {member.display_name} has collected every type, base colour, and pattern colour!"
+
+    await ctx.send(embed=embed)

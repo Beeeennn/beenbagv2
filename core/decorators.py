@@ -1,6 +1,6 @@
 # core/decorators.py
 from discord.ext import commands
-from services.monetization import peek_premium
+from services.monetization import peek_premium, IS_DEV, has_premium
 import math
 
 PREMIUM_FACTOR = 0.8
@@ -33,8 +33,10 @@ def premium_fixed_cooldown(
     bucket: commands.BucketType = commands.BucketType.member
 ):
     """Premium users get a fixed cooldown; free users get a longer one."""
-    def factory(ctx) -> commands.Cooldown:
-        is_premium = peek_premium(ctx.author.id)
+    def factory(obj) -> commands.Cooldown:
+        author = getattr(obj, "author", None)
+        user_id = getattr(author, "id", None)
+        is_premium = peek_premium(user_id) if user_id is not None else False
         per = premium_seconds if is_premium else free_seconds
         return commands.Cooldown(1, per)
 
@@ -62,4 +64,22 @@ async def send_premium_cooldown_message(ctx, error: commands.CommandOnCooldown):
     await ctx.send(
         f"⏳ You need to wait **{wait_str}** to do this again.\n"
         f"Get **Premium** to reduce this cooldown! `premium`"
+    )
+
+def premium_only():
+    """Allow only premium users (global). Cache-first, DB fallback."""
+    async def predicate(ctx: commands.Context) -> bool:
+        if IS_DEV:
+            return True  # let you test freely in dev
+        uid = ctx.author.id
+        if peek_premium(uid):
+            return True
+        # fallback to DB (fresh truth)
+        return await has_premium(ctx.bot.db_pool, uid)
+    return commands.check(predicate)
+
+async def send_premium_only_message(ctx):
+    await ctx.send(
+        "🔒 This command is for **Premium** members.\n"
+        "Get Premium to unlock it: `premium`"
     )

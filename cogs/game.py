@@ -3,7 +3,7 @@ from services import crafting, shop, activities, inventory, fishing, barn,exp_di
 from utils.parsing import parse_item_and_qty, _norm_item_from_args
 from constants import BLOCKED_SHOP_ITEMS
 import discord
-from core.decorators import premium_cooldown
+from core.decorators import premium_cooldown, premium_only, send_premium_only_message
 class Game(commands.Cog):
     def __init__(self, bot):
         self.bot = bot  # expects bot.db_pool to be set elsewhere
@@ -236,6 +236,15 @@ class Game(commands.Cog):
         # services.fishing.generate_aquarium(pool, ctx, who)
         await fishing.generate_aquarium(self.bot.db_pool, ctx, who)
 
+    @commands.command(name = "missingfish", aliases=["missfish","mfish"])
+    @premium_only()
+    async def missingfish(self, ctx, who: str | None = None):
+        await fishing.missing_fish(self.bot.db_pool,ctx,who)
+    @missingfish.error
+    async def missing_fish_error(self, ctx, error):
+        if isinstance(error, commands.CheckFailure):
+            return await send_premium_only_message(ctx)
+        raise error
     # ---------- Minigames ----------
     @commands.command(name="stronghold")
     @premium_cooldown(1, 3600, commands.BucketType.member)
