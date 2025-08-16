@@ -82,19 +82,19 @@ class General(commands.Cog):
             color=discord.Color.gold()
         )
         await ctx.send(embed=embed, view=view)
-        @commands.command(name="mypremium")
-        async def my_premium(self, ctx):
-            # Async DB/API check (authoritative)
-            db_check = await has_premium(self.bot.db_pool, ctx.author.id)
+    @commands.command(name="mypremium")
+    async def my_premium(self, ctx):
+        # Async DB/API check (authoritative)
+        db_check = await has_premium(self.bot.db_pool, ctx.author.id)
 
-            # Sync cache peek (what your cooldown decorators use)
-            cache_check = peek_premium(ctx.author.id)
+        # Sync cache peek (what your cooldown decorators use)
+        cache_check = peek_premium(ctx.author.id)
 
-            await ctx.send(
-                f"**Premium check for {ctx.author}:**\n"
-                f"- DB says: `{db_check}`\n"
-                f"- Cache peek says: `{cache_check}`"
-            )
+        await ctx.send(
+            f"**Premium check for {ctx.author}:**\n"
+            f"- DB says: `{db_check}`\n"
+            f"- Cache peek says: `{cache_check}`"
+        )
 
 
 async def setup(bot):

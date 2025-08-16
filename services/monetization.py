@@ -135,17 +135,17 @@ async def has_premium(pool, user_id: int) -> bool:
         has = row is not None
     _cache_put(user_id, has)
     return has
-async def grant_premium(con: "asyncpg.Connection", user_id: int, sku_id: int | str, expires_at: Optional[str]):
+async def grant_premium(con, user_id: int, sku_id: int | str, expires_at: str | None):
     await con.execute(
         """
         INSERT INTO premium_users (user_id, sku_id, expires_at, granted_at)
-        VALUES ($1, $2, $3, NOW())
+        VALUES ($1, $2::bigint, $3::timestamptz, NOW())
         ON CONFLICT (user_id) DO UPDATE
-          SET sku_id = EXCLUDED.sku_id,
-              expires_at = EXCLUDED.expires_at,
-              granted_at = NOW()
+          SET sku_id    = EXCLUDED.sku_id,
+              expires_at= EXCLUDED.expires_at,
+              granted_at= NOW()
         """,
-        user_id, str(sku_id), expires_at
+        user_id, int(sku_id), expires_at,
     )
     _cache_put(user_id, True)
 
