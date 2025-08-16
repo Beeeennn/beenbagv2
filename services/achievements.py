@@ -134,7 +134,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "exp": 5,
         "hidden": True,
         "repeatable": False,    
-        "category":"Starter",   
+        "category":"Hidden",   
     },
     "1000_ems":{
         "name": "Slightly Rich",
@@ -184,6 +184,14 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
         "repeatable": False,  
         "category":"Extreme",     
     },
+    "baby_been": {
+    "name": "Why....",
+    "description": "Have a baby with beenbag", ########
+    "exp": 2,
+    "hidden": True,
+    "repeatable": False,  
+    "category":"Hidden",     
+    },
 }
 
 # ---- 2b) Schema + migration helpers (per-guild unlocks) ----
@@ -222,7 +230,7 @@ ON CONFLICT (key) DO UPDATE SET
   category = EXCLUDED.category;
 """
 
-CATEGORY_ORDER = ["Starter", "Early", "Challenging", "Random", "Extreme"]
+CATEGORY_ORDER = ["Starter", "Early", "Challenging", "Random", "Extreme","Hidden"]
 
 def _ordered_categories(cats: List[str]) -> List[str]:
     order_index = {name: i for i, name in enumerate(CATEGORY_ORDER)}

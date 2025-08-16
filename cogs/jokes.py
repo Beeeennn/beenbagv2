@@ -7,6 +7,7 @@ import discord
 from discord.ext import commands
 from PIL import Image, ImageDraw, ImageFilter
 from core.decorators import *
+from services import achievements
 
 NUM_RE = re.compile(r"^\d*\.?\d+$")
 
@@ -54,7 +55,8 @@ class Images(commands.Cog):
             return await ctx.send("Please mention **two users**. Example: `!baby @A @B`")
 
         p1, p2 = mentions[0], mentions[1]
-
+        if {p1.id, p2.id} == {ctx.author.id, ctx.bot.user.id}:
+            await achievements.try_grant(self.bot.db_pool,ctx, ctx.author.id,"baby_been")
         # Parse optional numeric scale anywhere in the args
         scale: Optional[float] = None
         for tok in args:
@@ -108,7 +110,6 @@ class Images(commands.Cog):
     async def baby_error(self, ctx, error):
         if not isinstance(error, commands.CommandOnCooldown):
             ctx.command.reset_cooldown(ctx)
-
         if isinstance(error, commands.CommandOnCooldown):
             await send_premium_cooldown_message(ctx, error)
 
