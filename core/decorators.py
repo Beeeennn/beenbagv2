@@ -55,5 +55,5 @@ async def send_premium_cooldown_message(ctx, error: commands.CommandOnCooldown):
     wait_str = " ".join(parts)
     await ctx.send(
         f"⏳ You need to wait **{wait_str}** to do this again.\n"
-        f"Get **Premium** to reduce this cooldown! 'premium'"
+        f"Get **Premium** to reduce this cooldown! `premium`"
     )

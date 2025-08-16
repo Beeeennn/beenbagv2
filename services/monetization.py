@@ -5,8 +5,46 @@ import aiohttp
 from typing import Optional
 import asyncpg
 import logging
+PREMIUM_SKU_ID = 1405934572436193462  # "premium"
+IS_DEV = os.getenv("ENV", "").lower() == "dev"
+
+
 
 DISCORD_API = "https://discord.com/api/v10"
+
+import time
+from typing import Dict, Tuple
+
+CACHE_TTL_SECONDS = 60  # short TTL so negatives don't stick
+
+# user_id -> (has_premium, expires_at_epoch)
+_premium_cache: Dict[int, Tuple[bool, float]] = {}
+
+def _cache_put(user_id: int, has: bool, ttl: int = CACHE_TTL_SECONDS) -> None:
+    _premium_cache[user_id] = (has, time.time() + ttl)
+
+def _cache_get(user_id: int) -> Tuple[bool, bool]:
+    """
+    Returns (has_premium, fresh).
+    fresh=False means caller should not trust this and should refresh (async).
+    """
+    item = _premium_cache.get(user_id)
+    if not item:
+        return (False, False)
+    has, exp = item
+    if exp <= time.time():
+        return (False, False)
+    return (has, True)
+
+def peek_premium(user_id: int) -> bool:
+    """
+    Sync, non-blocking check used by cooldown decorators.
+    Returns cached value only; may be slightly stale. If no fresh entry, returns False.
+    """
+    if IS_DEV:
+        return True
+    has, fresh = _cache_get(user_id)
+    return has if fresh else False
 
 def _app_and_token() -> tuple[str, str]:
     app_id = os.getenv("DISCORD_APP_ID") or os.getenv("APPLICATION_ID")
@@ -57,24 +95,6 @@ async def consume_entitlement(entitlement_id: str) -> None:
 import os, time
 from typing import Dict, Tuple
 
-PREMIUM_SKU_ID = 1405934572436193462  # "premium"
-IS_DEV = os.getenv("ENV", "").lower() == "dev"
-
-# user_id -> (has_premium, expires_at_epoch)
-_premium_cache: Dict[int, Tuple[bool, float]] = {}
-
-def peek_premium(user_id: int) -> bool:
-    """Sync, non-blocking check used by cooldown decorators.
-    Returns cached value only; may be slightly stale."""
-    if IS_DEV:
-        return True
-    now = time.time()
-    cached = _premium_cache.get(user_id)
-    if not cached:
-        return False
-    has, exp = cached
-    # Only trust if still fresh
-    return has if exp > now else False
 
 # services/monetization.py
 import os
@@ -92,41 +112,46 @@ IS_DEV = os.getenv("ENV", "").lower() == "dev"
 # tiny in-process cache for has_premium (reduce DB hits in busy chats)
 _premium_cache: dict[int, tuple[bool, float]] = {}  # user_id -> (has, expires_at_ts)
 
-async def has_premium(pool: "asyncpg.Pool", user_id: int) -> bool:
-    """Global premium: ENV=dev -> True; else check DB (with 60s cache)."""
+async def has_premium(pool, user_id: int) -> bool:
     if IS_DEV:
         return True
-    now = time.time()
-    cached = _premium_cache.get(user_id)
-    if cached and cached[1] > now:
-        return cached[0]
 
+    # Try cache first; if fresh, return immediately
+    has, fresh = _cache_get(user_id)
+    if fresh:
+        return has
+
+    # Otherwise, hit DB and refresh cache
     async with pool.acquire() as con:
-        has = bool(await con.fetchval(
-            "SELECT 1 FROM premium_users WHERE user_id=$1 AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1",
-            user_id
-        ))
-    _premium_cache[user_id] = (has, now + 60)
+        row = await con.fetchrow(
+            """
+            SELECT 1
+            FROM premium_users
+            WHERE user_id=$1
+              AND (expires_at IS NULL OR expires_at > NOW())
+            """,
+            user_id,
+        )
+        has = row is not None
+    _cache_put(user_id, has)
     return has
-
-async def grant_premium(con: "asyncpg.Connection", user_id: int, sku_id: int, expires_at: Optional[str]):
+async def grant_premium(con: "asyncpg.Connection", user_id: int, sku_id: int | str, expires_at: Optional[str]):
     await con.execute(
         """
-        INSERT INTO premium_users (user_id, sku_id, expires_at)
-        VALUES ($1, $2, $3)
+        INSERT INTO premium_users (user_id, sku_id, expires_at, granted_at)
+        VALUES ($1, $2, $3, NOW())
         ON CONFLICT (user_id) DO UPDATE
-          SET sku_id=$2, expires_at=$3, granted_at=NOW()
+          SET sku_id = EXCLUDED.sku_id,
+              expires_at = EXCLUDED.expires_at,
+              granted_at = NOW()
         """,
-        user_id, sku_id, expires_at
+        user_id, str(sku_id), expires_at
     )
-    # bust cache
-    row = await con.fetchrow("SELECT * FROM premium_users WHERE user_id=$1", user_id)
-    logging.info("[entitlements] db row now: %r", dict(row) if row else None)
-    _premium_cache.pop(user_id, None)
+    _cache_put(user_id, True)
 
 async def revoke_premium(con: "asyncpg.Connection", user_id: int):
     await con.execute("DELETE FROM premium_users WHERE user_id=$1", user_id)
-    _premium_cache.pop(user_id, None)
+    _cache_put(user_id, False)
 
 # -------- Periodic full sync from REST (Option A) --------
 
@@ -181,7 +206,19 @@ async def sync_entitlements(pool: "asyncpg.Pool"):
         current.append((user_id, expires_at))
 
     logging.info("[entitlements] matched %d rows for SKU %s", len(current), premium_sku)
+    # After building `current` and before leaving sync_entitlements(...)
+    now_has = {u for (u, _) in current}
 
+    # Upserts already done here...
+
+    # Cache warm: mark current holders as True
+    for uid in now_has:
+        _cache_put(uid, True)
+
+    # Cache warm: mark revoked/missing as False (short TTL)
+    to_revoke = existing - now_has
+    for uid in to_revoke:
+        _cache_put(uid, False, ttl=CACHE_TTL_SECONDS)
 
     # Reconcile DB
     async with pool.acquire() as con:

@@ -1,6 +1,7 @@
 from discord.ext import commands
 import discord
 from services import crafting, shop, activities, fishing, barn, progression, yt_link
+from services.monetization import has_premium,peek_premium
 from utils.prefixes import get_cached_prefix
 from constants import BLOCKED_SHOP_ITEMS
 import os
@@ -57,7 +58,7 @@ class General(commands.Cog):
         view = discord.ui.View()
         view.add_item(discord.ui.Button(label="Invite me", url=INVITE_URL))
         await ctx.send(f"Add me to your server with this link:\n<{INVITE_URL}>", view=view)
-        
+
     @commands.command(name="premium")
     async def premium(self, ctx: commands.Context):
         PREMIUM_SKU_ID = "1405934572436193462"
@@ -81,6 +82,20 @@ class General(commands.Cog):
             color=discord.Color.gold()
         )
         await ctx.send(embed=embed, view=view)
+        @commands.command(name="mypremium")
+        async def my_premium(self, ctx):
+            # Async DB/API check (authoritative)
+            db_check = await has_premium(self.bot.db_pool, ctx.author.id)
+
+            # Sync cache peek (what your cooldown decorators use)
+            cache_check = peek_premium(ctx.author.id)
+
+            await ctx.send(
+                f"**Premium check for {ctx.author}:**\n"
+                f"- DB says: `{db_check}`\n"
+                f"- Cache peek says: `{cache_check}`"
+            )
+
 
 async def setup(bot):
     await bot.add_cog(General(bot))
