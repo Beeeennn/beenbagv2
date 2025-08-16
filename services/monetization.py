@@ -4,7 +4,7 @@ import os
 import aiohttp
 from typing import Optional
 import asyncpg
-
+import logging
 
 DISCORD_API = "https://discord.com/api/v10"
 
@@ -120,6 +120,8 @@ async def grant_premium(con: "asyncpg.Connection", user_id: int, sku_id: int, ex
         user_id, sku_id, expires_at
     )
     # bust cache
+    row = await con.fetchrow("SELECT * FROM premium_users WHERE user_id=$1", user_id)
+    logging.info("[entitlements] db row now: %r", dict(row) if row else None)
     _premium_cache.pop(user_id, None)
 
 async def revoke_premium(con: "asyncpg.Connection", user_id: int):
@@ -165,19 +167,21 @@ async def sync_entitlements(pool: "asyncpg.Pool"):
     async with aiohttp.ClientSession() as session:
         entitlements = await fetch_all_entitlements(session)
 
-    # Keep only your Premium SKU and valid entitlements
+    logging.info("[entitlements] fetched %d entitlements", len(entitlements))
+    if entitlements[:3]:
+        logging.info("[entitlements] sample: %r", entitlements[:3])
+
+    premium_sku = str(PREMIUM_SKU_ID)
     current = []
     for e in entitlements:
-        try:
-            if int(e.get("sku_id", 0)) != PREMIUM_SKU_ID:
-                continue
-            # Discord returns user_id for user entitlements
-            user_id = int(e["user_id"])
-            # expires_at might be null; store as timestamptz or None
-            expires_at = e.get("ends_at") or e.get("expires_at")
-            current.append((user_id, expires_at))
-        except Exception:
+        if str(e.get("sku_id")) != premium_sku:
             continue
+        user_id = int(e["user_id"])
+        expires_at = e.get("ends_at") or e.get("expires_at")
+        current.append((user_id, expires_at))
+
+    logging.info("[entitlements] matched %d rows for SKU %s", len(current), premium_sku)
+
 
     # Reconcile DB
     async with pool.acquire() as con:

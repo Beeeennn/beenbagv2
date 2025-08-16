@@ -29,5 +29,14 @@ class EntitlementSync(commands.Cog):
     async def before_sync(self):
         await self.bot.wait_until_ready()
 
+        # 🔹 One-shot immediate sync on startup
+        if not IS_DEV:
+            try:
+                logging.info("[entitlements] running initial sync...")
+                await sync_entitlements(self.bot.db_pool)
+                logging.info("[entitlements] initial sync complete")
+            except Exception:
+                logging.exception("[entitlements] initial sync failed")
+
 async def setup(bot: commands.Bot):
     await bot.add_cog(EntitlementSync(bot))
