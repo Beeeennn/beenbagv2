@@ -2,10 +2,16 @@
 from discord.ext import commands
 from services.monetization import peek_premium
 import math
+
+PREMIUM_FACTOR = 0.8
 def premium_cooldown(rate: int, per: float, bucket: commands.BucketType = commands.BucketType.member):
-    def factory(ctx) -> commands.Cooldown:
-        is_premium = peek_premium(ctx.author.id)  # sync, fast, no await
-        effective_per = per * 0.8 if is_premium else per
+    def factory(obj) -> commands.Cooldown:
+        # obj may be a Context or a Message depending on dpy version
+        author = getattr(obj, "author", None)
+        user_id = getattr(author, "id", None)
+        is_premium = peek_premium(user_id) if user_id is not None else False
+        effective_per = per * PREMIUM_FACTOR if is_premium else per
+        # ✅ Return a Cooldown object (not a decorator)
         return commands.Cooldown(rate, effective_per)
 
     deco = commands.dynamic_cooldown(factory, bucket)

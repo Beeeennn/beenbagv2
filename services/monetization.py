@@ -5,6 +5,7 @@ import aiohttp
 from typing import Optional
 import asyncpg
 import logging
+from datetime import datetime, timezone
 PREMIUM_SKU_ID = 1405934572436193462  # "premium"
 IS_DEV = os.getenv("ENV", "").lower() == "dev"
 
@@ -106,12 +107,8 @@ import aiohttp
 
 APP_ID = int(os.environ["APPLICATION_ID"])         # your bot application id
 BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]            # your bot token
-PREMIUM_SKU_ID = 1405934572436193462               # your Premium SKU
 IS_DEV = os.getenv("ENV", "").lower() == "dev"
-
-# tiny in-process cache for has_premium (reduce DB hits in busy chats)
-_premium_cache: dict[int, tuple[bool, float]] = {}  # user_id -> (has, expires_at_ts)
-
+PREMIUM_SKU_STR = str(PREMIUM_SKU_ID)
 async def has_premium(pool, user_id: int) -> bool:
     if IS_DEV:
         return True
@@ -157,89 +154,85 @@ async def revoke_premium(con: "asyncpg.Connection", user_id: int):
 
 API = "https://discord.com/api/v10"
 
-async def _fetch_entitlements_page(session: aiohttp.ClientSession, before: Optional[str] = None):
+async def _fetch_entitlements_page(session, before: str | None = None):
     params = {
         "application_id": str(APP_ID),
-        "limit": "100"
+        "limit": "100",
+        "sku_ids": PREMIUM_SKU_STR,  # only your premium SKU
+        "exclude_deleted": "true",
+        "exclude_ended": "true",     # trims most expired subs
     }
     if before:
         params["before"] = before
     headers = {"Authorization": f"Bot {BOT_TOKEN}"}
-    async with session.get(f"{API}/applications/{APP_ID}/entitlements", headers=headers, params=params, timeout=15) as resp:
+    async with session.get(
+        f"{API}/applications/{APP_ID}/entitlements",
+        headers=headers, params=params, timeout=15
+    ) as resp:
         resp.raise_for_status()
         return await resp.json()
+    
+def is_active_entitlement(e: dict, now: datetime) -> bool:
+    if e.get("deleted"):
+        return False
+    # for consumables, you may want to exclude consumed entitlements
+    if e.get("consumed"):
+        return False
+    starts = e.get("starts_at")
+    ends   = e.get("ends_at") or e.get("expires_at")  # some payloads use ends_at
+    if starts and datetime.fromisoformat(starts.replace("Z","+00:00")) > now:
+        return False
+    if ends:
+        if datetime.fromisoformat(ends.replace("Z","+00:00")) <= now:
+            return False
+    return True
 
-async def fetch_all_entitlements(session: aiohttp.ClientSession) -> list[dict]:
-    """Pull all entitlements for the application (paginated)."""
-    out: list[dict] = []
-    before = None
+async def fetch_all_entitlements(session):
+    out, before = [], None
     while True:
-        data = await _fetch_entitlements_page(session, before=before)
-        if not data:
+        page = await _fetch_entitlements_page(session, before)
+        if not page:
             break
-        out.extend(data)
-        # pagination: use the oldest id as 'before'
-        before = data[-1]["id"]
-        if len(data) < 100:
+        out.extend(page)
+        before = page[-1]["id"]
+        if len(page) < 100:
             break
     return out
 
-async def sync_entitlements(pool: "asyncpg.Pool"):
-    """
-    Full reconciliation: fetch all app entitlements, filter to your premium SKU,
-    upsert current rows, and remove rows that no longer exist (or are expired).
-    """
+async def sync_entitlements(pool):
+    logging.info("Syncing entitlements")
     async with aiohttp.ClientSession() as session:
-        entitlements = await fetch_all_entitlements(session)
+        ents = await fetch_all_entitlements(session)
 
-    logging.info("[entitlements] fetched %d entitlements", len(entitlements))
-    if entitlements[:3]:
-        logging.info("[entitlements] sample: %r", entitlements[:3])
-
-    premium_sku = str(PREMIUM_SKU_ID)
+    now = datetime.now(timezone.utc)
     current = []
-    for e in entitlements:
-        if str(e.get("sku_id")) != premium_sku:
+    for e in ents:
+        if str(e.get("sku_id")) != PREMIUM_SKU_STR:
+            continue
+        if not is_active_entitlement(e, now):
             continue
         user_id = int(e["user_id"])
+        # active subs often have no ends_at; store NULL for “indefinite (for now)”
         expires_at = e.get("ends_at") or e.get("expires_at")
         current.append((user_id, expires_at))
 
-    logging.info("[entitlements] matched %d rows for SKU %s", len(current), premium_sku)
-
-
-    # Reconcile DB
     async with pool.acquire() as con:
         async with con.transaction():
-            # mark all existing premium users to diff later
-            db_rows = await con.fetch("SELECT user_id FROM premium_users")
-            existing = {r["user_id"] for r in db_rows}
-
-            # upsert current
-            for user_id, expires_at in current:
-                await grant_premium(con, user_id, PREMIUM_SKU_ID, expires_at)
-
-            # revoke users no longer present (and not in current list)
-            current_ids = {u for (u, _) in current}
+            existing = {r["user_id"] for r in await con.fetch("SELECT user_id FROM premium_users")}
+            for uid, exp in current:
+                await grant_premium(con, uid, PREMIUM_SKU_ID, exp)
+            current_ids = {uid for uid, _ in current}
             to_revoke = existing - current_ids
             if to_revoke:
                 await con.executemany("DELETE FROM premium_users WHERE user_id=$1", [(u,) for u in to_revoke])
+            await con.execute("""
+                DELETE FROM premium_users
+                WHERE expires_at IS NOT NULL AND expires_at <= NOW()
+            """)
 
-            # also clean expired (belt-and-braces)
-            await con.execute("DELETE FROM premium_users WHERE expires_at IS NOT NULL AND expires_at <= NOW()")
-    # After building `current` and before leaving sync_entitlements(...)
-    now_has = {u for (u, _) in current}
-
-    # Upserts already done here...
-
-    # Cache warm: mark current holders as True
-    for uid in now_has:
+    # Warm caches (optional but nice)
+    for uid, _ in current:
         _cache_put(uid, True)
-
-    # Cache warm: mark revoked/missing as False (short TTL)
-    to_revoke = existing - now_has
-    for uid in to_revoke:
-        _cache_put(uid, False, ttl=CACHE_TTL_SECONDS)
-    # clear cache for any user we touched
-    for user_id, _ in current:
-        _premium_cache.pop(user_id, None)
+    for uid in (existing - {u for u, _ in current}):
+        _cache_put(uid, False)
+    logging.info(f"{len(current)} members have premium")
