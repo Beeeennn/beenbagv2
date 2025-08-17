@@ -5,7 +5,7 @@ from services import achievements
 from utils import game_helpers
 
 # Put this inside your Cog class
-async def quiz(db_pool, ctx: commands.Context, rounds: int = 5, file_path: str = "assets\quiz_questions.txt"):
+async def quiz(db_pool, ctx: commands.Context, rounds: int = 5, file_path: str = "assets/quiz_questions.txt"):
     import random, asyncio, re, time
     from pathlib import Path
     import discord
