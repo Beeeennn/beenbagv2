@@ -1,5 +1,5 @@
 from discord.ext import commands
-from services import crafting, shop, activities, inventory, fishing, barn,exp_display, progression, yt_link, minigames,achievements
+from services import crafting, shop,quiz, activities, inventory, fishing, barn,exp_display, progression, yt_link, minigames,achievements
 from utils.parsing import parse_item_and_qty, _norm_item_from_args
 from constants import BLOCKED_SHOP_ITEMS
 import discord
@@ -253,6 +253,17 @@ class Game(commands.Cog):
         await minigames.c_stronghold(self.bot.db_pool, ctx)
     @stronghold.error
     async def stronghold_error(self, ctx, error):
+        if isinstance(error, commands.CommandOnCooldown):
+            retry = int(error.retry_after)
+            return await ctx.send(f"This command is on cooldown. Try again in {retry} second{'s' if retry != 1 else ''}.")
+        raise error
+    
+    @commands.command(name="quiz",aliases = ["trivia"])
+    @premium_cooldown(1, 28800, commands.BucketType.member)
+    async def quiz_cmd(self, ctx: commands.Context):
+        await quiz.quiz(self.bot.db_pool,ctx,5)
+    @quiz_cmd.error
+    async def quiz_error(self, ctx, error):
         if isinstance(error, commands.CommandOnCooldown):
             retry = int(error.retry_after)
             return await ctx.send(f"This command is on cooldown. Try again in {retry} second{'s' if retry != 1 else ''}.")

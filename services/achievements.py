@@ -192,6 +192,22 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
     "repeatable": False,  
     "category":"Hidden",     
     },
+    "fast_quiz": {
+    "name": "Fast AF",
+    "description": "Answer a trivia question in less than half a second", ########
+    "exp": 3,
+    "hidden": False,
+    "repeatable": False,  
+    "category":"Random",     
+    },
+    "full_marks": {
+    "name": "Brainbox",
+    "description": "Get first place in all 5 rounds of trivia", ########
+    "exp": 3,
+    "hidden": False,
+    "repeatable": False,  
+    "category":"Random",     
+    },
 }
 
 # ---- 2b) Schema + migration helpers (per-guild unlocks) ----
