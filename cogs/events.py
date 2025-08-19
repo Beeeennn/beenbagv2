@@ -155,6 +155,7 @@ class Events(commands.Cog):
             description=(
                 f"**First step:** run `!setup`.\n"
                 f"This sets which channels I use for spawns, logs, and announcements."
+                f"Join my discord to ask any questions and give feedback: https://discord.gg/St4Asc5hJP"
             ),
             color=discord.Color.blurple()
         )

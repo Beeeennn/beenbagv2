@@ -114,7 +114,6 @@ class BackgroundStoreView(discord.ui.View):
         em.set_footer(text=f"Page {self.page + 1}/{total_pages} • {total} total")
         return em
 
-
 # ----------------------------- Cog -----------------------------
 
 class Backgrounds(commands.Cog):

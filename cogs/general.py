@@ -54,10 +54,16 @@ class General(commands.Cog):
         await ctx.send(embed=e)
 
     @commands.command(name="invite", help="Get the bot's invite link.")
+
     async def invite(self, ctx: commands.Context):
         view = discord.ui.View()
         view.add_item(discord.ui.Button(label="Invite me", url=INVITE_URL))
         await ctx.send(f"Add me to your server with this link:\n<{INVITE_URL}>", view=view)
+
+    @commands.command(name="discord", help="The invite to the bot's discord server.")
+    async def disc(self, ctx: commands.Context):
+        await ctx.send(f"Join the discord! -> https://discord.gg/St4Asc5hJP")
+
 
     @commands.command(name="premium")
     async def premium(self, ctx: commands.Context):

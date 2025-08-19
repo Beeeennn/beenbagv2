@@ -258,6 +258,57 @@ HELP_TEXTS = {
         "usage": "bg set [background name]",
         "aliases": [],
     },    
+    ###################### BASE / HOUSING ######################
+    "base": {
+        "desc": "House system hub. Browse, buy, view items, decorate rooms, and manage upgrades.",
+        "usage": "base",
+        "aliases": [],
+    },
+    "base shop": {
+        "desc": "Open the rich base shop menu.",
+        "usage": "base shop",
+        "aliases": [],
+    },
+    "base browse": {
+        "desc": "Browse base items by category with arrows and a category dropdown.",
+        "usage": "base browse [category]",
+        "aliases": [],
+    },
+    "base view": {
+        "desc": "Preview a base shop item by ID (embed with image, name, price, id).",
+        "usage": "base view <item_id>",
+        "aliases": [],
+    },
+    "base buy": {
+        "desc": "Buy base shop items by ID.",
+        "usage": "base buy <item_id> [qty]",
+        "aliases": [],
+    },
+    "base inv": {
+        "desc": "Show a user's UNUSED base items (grouped & counted).",
+        "usage": "base inv [@user]",
+        "aliases": [],
+    },
+    "base rooms": {
+        "desc": "View rooms a user owns and flip through them.",
+        "usage": "base rooms [@user]",
+        "aliases": [],
+    },
+    "base decorate": {
+        "desc": "Interactively place or clear decorations in your room.",
+        "usage": "base decorate [room_id]",
+        "aliases": [],
+    },
+    "base upgrades": {
+        "desc": "List all room upgrades (one per room type).",
+        "usage": "base upgrades",
+        "aliases": [],
+    },
+    "base upgrades buy": {
+        "desc": "Buy a room upgrade (unlocks a new room type).",
+        "usage": "base upgrades buy <upgrade_id>",
+        "aliases": [],
+    },
 }
 
 
@@ -317,10 +368,23 @@ HELP_CATEGORIES = {
     "credits": "General",
     "yt": "General",
     "linkyt": "General",
-    "mcprofile":"General"
+    "mcprofile":"General",
+
+
+    "base": "Base / Housing",
+    "base shop": "Base / Housing",
+    "base browse": "Base / Housing",
+    "base view": "Base / Housing",
+    "base buy": "Base / Housing",
+    "base inv": "Base / Housing",
+    "base rooms": "Base / Housing",
+    "base decorate": "Base / Housing",
+    "base upgrades": "Base / Housing",
+    "base upgrades buy": "Base / Housing",
+
 }
 
-CATEGORY_ORDER = ["Game", "Admin", "Leaderboards", "General", "Other"]
+CATEGORY_ORDER = ["Game", "Base / Housing", "Admin", "Leaderboards", "General", "Other"]
 
 DISCORD_FIELD_LIMIT = 1024
 DISCORD_MESSAGE_LIMIT = 2000

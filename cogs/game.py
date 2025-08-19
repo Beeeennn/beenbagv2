@@ -1,5 +1,5 @@
 from discord.ext import commands
-from services import crafting, shop,quiz, activities, inventory, fishing, barn,exp_display, progression, yt_link, minigames,achievements
+from services import crafting, base_shop, shop,quiz, activities, inventory, fishing, barn,exp_display, progression, yt_link, minigames,achievements
 from utils.parsing import parse_item_and_qty, _norm_item_from_args
 from constants import BLOCKED_SHOP_ITEMS
 import discord
@@ -259,7 +259,7 @@ class Game(commands.Cog):
         raise error
     
     @commands.command(name="quiz",aliases = ["trivia"])
-    @premium_cooldown(1, 28800, commands.BucketType.member)
+    @premium_cooldown(1, 86400, commands.BucketType.member)
     async def quiz_cmd(self, ctx: commands.Context):
         await quiz.quiz(self.bot.db_pool,ctx,5)
     @quiz_cmd.error
@@ -268,6 +268,8 @@ class Game(commands.Cog):
             retry = int(error.retry_after)
             return await ctx.send(f"This command is on cooldown. Try again in {retry} second{'s' if retry != 1 else ''}.")
         raise error
+    
+
 
 async def setup(bot):
     await bot.add_cog(Game(bot))
