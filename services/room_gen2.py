@@ -87,7 +87,7 @@ ROOM_TYPES: Dict[str, RoomConfig] = {
             "poster2":[(5, 7)],
             "poster3":[(3, 7)],
             "pet_house":[(4,8)],
-            "pet":[(4,9)]
+            "pets":[(4,9)]
         },
         light_spots={
             "bg_torch": [(4, 2)],

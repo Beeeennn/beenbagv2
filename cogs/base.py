@@ -907,7 +907,7 @@ SLOT_TO_CATEGORIES: dict[str, List[str]] = {
     "poster3": ["posters", "poster"],
     "furniture1": ["furniture"],
     "furniture2": ["furniture"],
-    "pet": ["pets", "pet"],
+    "pets": ["pets", "pet"],
 }
 FALLBACKS = {"flooring": "dirt", "inside_wall": "dirt", "outline_wall": "dirt"}
 
@@ -1799,7 +1799,7 @@ class BaseViewCog(commands.Cog):
                  ORDER BY room_id
             """, gid, target.id)
         if not rooms:
-            return await ctx.send(f"{target.display_name} doesn't own any rooms yet.")
+            return await ctx.send(f"{target.display_name} doesn't own any rooms yet, they can buy one with Buy one with `!base upgrades`.")
         view = RoomsViewer(ctx, self.bot.db_pool, target, rooms)
         await view.start()
 
