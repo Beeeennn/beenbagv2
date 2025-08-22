@@ -9,7 +9,7 @@ from aiohttp import web
 from PIL import Image
 import io
 import dateparser
-
+from services import achievements
 from datetime import datetime,timedelta
 from zoneinfo import ZoneInfo
 import string
@@ -90,7 +90,7 @@ async def sucsac(ctx:commands.Context, user, mob_name: str, is_gold: bool, note:
         reward*=2
     num = SWORDS[best_tier]
     if best_tier == "diamond" and mob_name.lower() == "chicken":
-        await achievements.try_grant(ctx.bot.db_pool, ctx, user_id, "mob_catch")
+        await achievements.try_grant(ctx.bot.db_pool, ctx, user_id, "overkill")
     reward += num
     await conn.execute(
         """
@@ -107,6 +107,11 @@ async def sucsac(ctx:commands.Context, user, mob_name: str, is_gold: bool, note:
 
     # grant emeralds
     await give_items(user_id,"emeralds",reward,"emeralds",False,conn,guild_id)
+    ems = await get_items(conn,user_id,"emeralds",guild_id)
+    if ems >= 1000:
+        achievements.try_grant_conn(conn,ctx,user_id,"1000_ems")
+    if ems >= 10000:
+        achievements.try_grant_conn(conn,ctx,user_id,"10000_ems")
     # record in sacrifice_history
     await conn.execute(
         """

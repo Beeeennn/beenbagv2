@@ -251,6 +251,21 @@ class Events(commands.Cog):
                 sac = False
                 if MOBS[mob_name]["rarity"]  == 4:
                     await achievements.try_grant(self.bot.db_pool, message, user_id, "epic_mob")
+                if mob_name.lower() == "zombie":
+                    rec = await conn.fetchrow(
+                        """
+                        SELECT "count"
+                        FROM barn
+                        WHERE guild_id=$1 AND user_id=$2 AND LOWER(mob_name)='chicken'
+                        """,
+                        guild_id, user_id
+                    )
+                    if not rec:
+                        pass
+                    else:
+                        achievements.try_grant(self.bot.db_pool, message, user_id, "chicken_jockey")
+
+
                 # 1) Add to the barn (or sacrifice if full)
                 #    First ensure the player/barn rows exist:
                 await ensure_player(conn,message.author.id,guild_id)

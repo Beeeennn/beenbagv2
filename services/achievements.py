@@ -130,7 +130,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
     },
     "chicken_jockey": {
         "name": "CHICKEN JOCKEY",
-        "description": "catch a zombie while you have a chicken in your barn", #################
+        "description": "catch a zombie while you have a chicken in your barn", 
         "exp": 5,
         "hidden": True,
         "repeatable": False,    
@@ -138,7 +138,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
     },
     "1000_ems":{
         "name": "Slightly Rich",
-        "description": "Have 1000 emeralds", ###############
+        "description": "Have 1000 emeralds", 
         "exp": 20,
         "hidden": False,
         "repeatable": False,      
@@ -146,7 +146,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
     },
     "10000_ems":{
         "name": "Very Rich",
-        "description": "Have 10000 emeralds", ###################
+        "description": "Have 10000 emeralds", 
         "exp": 20,
         "hidden": False,
         "repeatable": False,  
@@ -186,7 +186,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
     },
     "baby_been": {
     "name": "Why....",
-    "description": "Have a baby with beenbag", ########
+    "description": "Have a baby with beenbag",
     "exp": 2,
     "hidden": True,
     "repeatable": False,  
@@ -194,7 +194,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
     },
     "fast_quiz": {
     "name": "Fast AF",
-    "description": "Answer a trivia question in less than half a second", ########
+    "description": "Answer a trivia question in less than half a second",
     "exp": 3,
     "hidden": False,
     "repeatable": False,  
@@ -202,7 +202,7 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
     },
     "full_marks": {
     "name": "Brainbox",
-    "description": "Get first place in all 5 rounds of trivia", ########
+    "description": "Get first place in all 5 rounds of trivia",
     "exp": 3,
     "hidden": False,
     "repeatable": False,  
@@ -456,12 +456,78 @@ async def grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, notify: bool = 
                     )
                 return exp
             return 0
+async def grant_with_conn(conn, ctx, user_id: int, key: str, notify: bool = True) -> Optional[int]:
+    meta = ACHIEVEMENTS.get(key)
+    if not meta:
+        return None
 
+    guild_id = game_helpers.gid_from_ctx(ctx)
+    if guild_id is None:
+        # Only award achievements in servers
+        return 0
+
+    ach = await _get_achievement_row(conn, key)
+    if not ach:
+        await conn.execute(
+            UPSERT_SQL, key, meta["name"], meta["description"], meta["exp"],
+            meta.get("hidden", False), meta.get("repeatable", False),
+            meta.get("category", "General"),
+        )
+        ach = await _get_achievement_row(conn, key)
+
+    ach_id = ach["id"]
+    exp    = ach["exp"]
+    is_repeat = ach["repeatable"]
+
+    if is_repeat:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO user_achievement (user_id, guild_id, achievement_id, times_awarded)
+            VALUES ($1, $2, $3, 1)
+            ON CONFLICT (user_id, guild_id, achievement_id)
+            DO UPDATE SET times_awarded = user_achievement.times_awarded + 1,
+                            unlocked_at   = NOW()
+            RETURNING times_awarded
+            """,
+            user_id, guild_id, ach_id
+        )
+        await _grant_exp(conn, ctx, user_id, exp)
+        if notify:
+            await _send_unlock_embed(
+                ctx, name=meta["name"], description=meta["description"],
+                exp=exp, repeatable=True, times_awarded=row["times_awarded"]
+            )
+        return exp
+    else:
+        inserted = await conn.fetchrow(
+            """
+            INSERT INTO user_achievement (user_id, guild_id, achievement_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, guild_id, achievement_id) DO NOTHING
+            RETURNING 1
+            """,
+            user_id, guild_id, ach_id
+        )
+        if inserted:
+            await _grant_exp(conn, ctx, user_id, exp)
+            if notify:
+                await _send_unlock_embed(
+                    ctx, name=meta["name"], description=meta["description"],
+                    exp=exp, repeatable=False, times_awarded=1
+                )
+            return exp
+        return 0
 async def try_grant(pool: asyncpg.Pool, ctx, user_id: int, key: str, *, notify: bool = True) -> Optional[int]:
     if ACHIEVEMENTS.get(key) is None:
         print(f"Error getting achievement {key}")
         return None
     return await grant(pool, ctx, user_id, key, notify=notify)
+
+async def try_grant_conn(conn, ctx, user_id: int, key: str, *, notify: bool = True) -> Optional[int]:
+    if ACHIEVEMENTS.get(key) is None:
+        print(f"Error getting achievement {key}")
+        return None
+    return await grant_with_conn(conn, ctx, user_id, key, notify=notify)
 
 async def try_grant_many(pool: asyncpg.Pool, ctx, user_id: int, keys: Iterable[str]) -> int:
     total = 0

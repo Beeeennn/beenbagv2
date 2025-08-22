@@ -20,7 +20,7 @@ class Game(commands.Cog):
             activity=activity
         )
 
-    @commands.command(name="achievements", aliases=["ach","achs"])
+    @commands.command(name="achievements", aliases=["ach","achs","achievement"])
     async def achievements_cmd(self, ctx, *, who: str | None = None):
         user = ctx.author
         if who and ctx.message.mentions:
