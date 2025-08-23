@@ -62,7 +62,7 @@ class General(commands.Cog):
 
     @commands.command(name="discord", help="The invite to the bot's discord server.")
     async def disc(self, ctx: commands.Context):
-        await ctx.send(f"Join the discord! -> https://discord.gg/St4Asc5hJP")
+        await ctx.send(f"Join the discord! -> https://discord.gg/7NrMN4mdgA")
 
 
     @commands.command(name="premium")
