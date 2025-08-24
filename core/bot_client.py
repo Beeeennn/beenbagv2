@@ -9,20 +9,23 @@ log = logging.getLogger("beenbag.bot")
 
 class BeenBag(commands.Bot):
     def __init__(self, db_pool=None, **kwargs):
-        # sensible defaults if not provided by the caller
         intents = kwargs.get("intents", discord.Intents.default())
-        # ✅ enable the privileged members intent for on_member_join
         intents.members = True
-        # (optional) you already use prefix commands; keep message_content on
         intents.message_content = True
 
         kwargs["intents"] = intents
+
+        # ✅ strip_after_prefix lets "! help" work
         kwargs.setdefault("command_prefix", lambda b, m: commands.when_mentioned_or("!")(b, m))
         kwargs.setdefault("strip_after_prefix", True)
 
+        # ✅ make commands case-insensitive
+        kwargs.setdefault("case_insensitive", True)
+
         super().__init__(**kwargs)
+
         self.db_pool = db_pool
-        self.state = {}              # for tasks/spawns.py
+        self.state = {}
         self._bg_tasks = set()
 
         log.info("Intents set: members=%s, message_content=%s",
@@ -54,7 +57,7 @@ class BeenBag(commands.Bot):
 
         for ext in ("cogs.base","cogs.jokes","cogs.mcprofile","cogs.entitlements",
                     "cogs.help","cogs.admin","cogs.events","cogs.general",
-                    "cogs.game","cogs.leaderboard","cogs.background"):
+                    "cogs.game","cogs.leaderboard","cogs.background","cogs.stream_watch"):
             try:
                 await self.load_extension(ext)
             except Exception:

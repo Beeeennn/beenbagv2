@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from typing import Set
 
 # Optional: load .env files when running locally
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except Exception:
-    pass
+# try:
+#     from dotenv import load_dotenv
+#     load_dotenv()
+# except Exception:
+#     pass
 
 def _parse_id_set(val: str | None) -> Set[int]:
     if not val:

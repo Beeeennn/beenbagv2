@@ -309,6 +309,38 @@ HELP_TEXTS = {
         "usage": "base upgrades buy <upgrade_id>",
         "aliases": [],
     },
+
+    # ---------- YouTube Watcher ----------
+    "ytwatch": {
+        "desc": "Manage YouTube announcements (uploads/shorts + live).",
+        "usage": "ytwatch",
+        "aliases": [],
+    },
+    "ytwatch set": {
+        "desc": "Start watching a YouTube channel and choose where to announce (optional role ping).",
+        "usage": "ytwatch set <channel-url-or-@handle> [#channel] [@role]",
+        "aliases": [],
+    },
+    "ytwatch role": {
+        "desc": "Set or clear the role to ping on announcements.",
+        "usage": "ytwatch role [@role|none]",
+        "aliases": [],
+    },
+    "ytwatch channel": {
+        "desc": "Set the channel for announcements.",
+        "usage": "ytwatch channel [#channel]",
+        "aliases": [],
+    },
+    "ytwatch test": {
+        "desc": "Force an immediate check for new upload / live.",
+        "usage": "ytwatch test",
+        "aliases": [],
+    },
+    "ytwatch off": {
+        "desc": "Stop watching YouTube for this server.",
+        "usage": "ytwatch off",
+        "aliases": [],
+    },
 }
 
 
@@ -381,6 +413,13 @@ HELP_CATEGORIES = {
     "base decorate": "Base / Housing",
     "base upgrades": "Base / Housing",
     "base upgrades buy": "Base / Housing",
+    #--------- Yt channel -----------
+    "ytwatch": "Admin Youtube",
+    "ytwatch set": "Admin Youtube",
+    "ytwatch role": "Admin Youtube",
+    "ytwatch channel": "Admin Youtube",
+    "ytwatch test": "Admin Youtube",
+    "ytwatch off": "Admin Youtube",
 
 }
 
