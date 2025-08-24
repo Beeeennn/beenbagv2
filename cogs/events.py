@@ -100,7 +100,8 @@ class Events(commands.Cog):
             pref = get_cached_prefix(guild.id) if "get_cached_prefix" in globals() else "bc!"
             await channel.send(
                 f"👋 Welcome {member.mention}! Glad to have you in **{guild.name}**.\n"
-                f"Try `{pref}help` to see what I can do."
+                f"Try `{pref}help` to see what I can do.\n"
+                f"Use `{pref}chop` to begin your beenbag adventure"
             )
         except Exception:
             logging.exception("Failed to send welcome message")

@@ -188,83 +188,139 @@ def get_level_from_exp(exp: int) -> int:
             lvl = level
     return lvl
 
-async def gain_exp(conn, bot, user_id: int, exp_gain: int, message=None, guild_id: int=None):
+async def gain_exp(conn, bot, user_id: int, exp_gain: int, message=None, guild_id: int = None):
+    """
+    Grants XP, announces level-ups (to the guild's announce channel if set, else the message channel),
+    and manages milestone roles. Safe if `bot` is None and only `message` is provided.
+    """
+    # --- derive guild_id if missing ---
     if guild_id is None:
-        guild_id = message.guild.id if message and message.guild else None
-    await ensure_account(conn,user_id, guild_id)
-    old_exp = await conn.fetchval("""
-        SELECT experience FROM accountinfo
-         WHERE guild_id = $1 AND discord_id = $2
-    """, guild_id, user_id) or 0
+        guild_id = (getattr(getattr(message, "guild", None), "id", None) if message else None)
+
+    # If we still don't know the guild, we can't proceed safely.
+    if guild_id is None:
+        return
+
+    # --- ensure account row exists ---
+    await ensure_account(conn, user_id, guild_id)
+
+    # --- compute new exp/level ---
+    old_exp = await conn.fetchval(
+        "SELECT experience FROM accountinfo WHERE guild_id = $1 AND discord_id = $2",
+        guild_id, user_id
+    ) or 0
 
     new_exp = old_exp + exp_gain
-    await conn.execute("""
+    await conn.execute(
+        """
         UPDATE accountinfo
            SET experience = $1, overallexp = overallexp + $2
          WHERE guild_id = $3 AND discord_id = $4
-    """, new_exp, exp_gain, guild_id, user_id)
+        """,
+        new_exp, exp_gain, guild_id, user_id
+    )
 
     old_lvl = get_level_from_exp(old_exp)
     new_lvl = get_level_from_exp(new_exp)
     if new_lvl <= old_lvl:
-        return
+        return  # no level-up; nothing else to do
 
+    # leaderboard tally
     await lb_inc(conn, "overall_experience", user_id, guild_id, exp_gain)
 
-    # Announce channel lookup works without message:
-    announce_id = await conn.fetchval(
-        "SELECT announce_channel_id FROM guild_settings WHERE guild_id = $1",
-        guild_id
-    )
-    announce_ch = bot.get_channel(announce_id) if announce_id else None
+    # --- recover bot if caller passed None ---
+    if bot is None:
+        bot = getattr(message, "bot", None) or getattr(message, "client", None)
+        if bot is None and message is not None:
+            # discord.Message has an internal state that can yield the client
+            st = getattr(message, "_state", None)
+            if st is not None and hasattr(st, "_get_client"):
+                try:
+                    bot = st._get_client()
+                except Exception:
+                    bot = None  # keep None; we'll just skip bot-dependent lookups
 
-    # --- role updates should not depend on "message" ---
+    # --- choose announce channel (guild setting -> cache) ---
+    announce_ch = None
+    try:
+        announce_id = await conn.fetchval(
+            "SELECT announce_channel_id FROM guild_settings WHERE guild_id = $1",
+            guild_id
+        )
+    except Exception:
+        announce_id = None
+
+    if announce_id and bot is not None:
+        announce_ch = bot.get_channel(int(announce_id))  # may still be None if not cached
+
+    # Fallback: use the message's channel if available
+    if announce_ch is None and message is not None:
+        announce_ch = getattr(message, "channel", None)
+
+    # --- role updates (don’t require message) ---
     guild = None
     member = None
 
-    if message and message.guild:
+    # Prefer guild/member from message if we have it
+    if message is not None and getattr(message, "guild", None):
         guild = message.guild
         member = guild.get_member(user_id)
-    else:
-        if guild_id:
-            guild = bot.get_guild(guild_id)
-            if guild:
-                member = guild.get_member(user_id)
 
-    if guild and member:
-        # remove previous milestone role (unchanged)
-        prev_milestone = max([m for m in MILESTONE_ROLES if m < new_lvl], default=None)
-        if prev_milestone:
-            prev_role_id = await conn.fetchval(
-                "SELECT role_id FROM guild_level_roles WHERE guild_id = $1 AND level = $2",
-                guild_id, prev_milestone
-            )
-            if prev_role_id:
-                old_role = guild.get_role(prev_role_id)
-                if old_role and old_role in member.roles:
-                    await member.remove_roles(old_role, reason="Leveled up")
+    # Otherwise try cache via bot
+    if guild is None and bot is not None:
+        guild = bot.get_guild(guild_id)
+        if guild is not None and member is None:
+            member = guild.get_member(user_id)
 
-        # add new milestone role
-        if new_lvl in MILESTONE_ROLES:
-            role_id = await conn.fetchval(
-                "SELECT role_id FROM guild_level_roles WHERE guild_id = $1 AND level = $2",
-                guild_id, new_lvl
-            )
-            if role_id:
-                new_role = guild.get_role(role_id)
-                if new_role:
-                    await member.add_roles(new_role, reason="Leveled up")
-    level_ann = await conn.fetchval(
-        "SELECT COALESCE(level_announcements_enabled, TRUE) FROM guild_settings WHERE guild_id=$1",
-        guild_id
-    )
-    # Announce if possible
-    text = f"🎉 <@{user_id}> leveled up to **Level {new_lvl}**!"
+    # Remove previous milestone role & add new one (best-effort)
+    if guild is not None and member is not None:
+        try:
+            prev_milestone = max([m for m in MILESTONE_ROLES if m < new_lvl], default=None)
+            if prev_milestone is not None:
+                prev_role_id = await conn.fetchval(
+                    "SELECT role_id FROM guild_level_roles WHERE guild_id = $1 AND level = $2",
+                    guild_id, prev_milestone
+                )
+                if prev_role_id:
+                    old_role = guild.get_role(int(prev_role_id))
+                    if old_role and old_role in member.roles:
+                        await member.remove_roles(old_role, reason="Leveled up")
+
+            if new_lvl in MILESTONE_ROLES:
+                role_id = await conn.fetchval(
+                    "SELECT role_id FROM guild_level_roles WHERE guild_id = $1 AND level = $2",
+                    guild_id, new_lvl
+                )
+                if role_id:
+                    new_role = guild.get_role(int(role_id))
+                    if new_role:
+                        await member.add_roles(new_role, reason="Leveled up")
+        except Exception:
+            # Don’t let role errors block XP/announcement
+            import logging
+            logging.exception("gain_exp: role update failed for user %s in guild %s", user_id, guild_id)
+
+    # --- announcement toggle & send ---
+    try:
+        level_ann = await conn.fetchval(
+            "SELECT COALESCE(level_announcements_enabled, TRUE) FROM guild_settings WHERE guild_id = $1",
+            guild_id
+        )
+    except Exception:
+        level_ann = True  # default to on if the setting can't be read
+
     if level_ann:
-        if announce_ch:
-            await announce_ch.send(text)
-        elif message:
-            await message.channel.send(text)
+        text = f"🎉 <@{user_id}> leveled up to **Level {new_lvl}**!"
+        try:
+            if announce_ch is not None:
+                await announce_ch.send(text)
+            elif message is not None:
+                await message.channel.send(text)
+            # else: nowhere to announce; silently skip
+        except Exception:
+            import logging
+            logging.exception("gain_exp: failed to send level-up announcement in guild %s", guild_id)
+
 # utils/game_helpers.py
 async def ensure_account(conn, user_id: int, guild_id: int):
     await conn.execute("""
