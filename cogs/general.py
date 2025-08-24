@@ -5,7 +5,7 @@ from services.monetization import has_premium,peek_premium
 from utils.prefixes import get_cached_prefix
 from constants import BLOCKED_SHOP_ITEMS
 import os
-INVITE_URL = "https://discord.com/oauth2/authorize?client_id=1396168326132011119&scope=bot%20applications.commands&permissions=2714688679152"
+INVITE_URL = "https://discord.com/oauth2/authorize?client_id=1396168326132011119&scope=bot%20applications.commands&permissions=3816884137024"
 
 class General(commands.Cog):
     def __init__(self, bot): 
