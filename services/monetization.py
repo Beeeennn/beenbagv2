@@ -109,6 +109,60 @@ APP_ID = int(os.environ["APPLICATION_ID"])         # your bot application id
 BOT_TOKEN = os.environ["DISCORD_BOT_TOKEN"]            # your bot token
 IS_DEV = os.getenv("ENV", "").lower() == "dev"
 PREMIUM_SKU_STR = str(PREMIUM_SKU_ID)
+
+
+# services/monetization.py (top-level imports already present)
+import asyncio
+import random
+from aiohttp import ClientResponseError
+
+# Exponential backoff with jitter; respects Retry-After when present.
+async def _get_with_retries(session: aiohttp.ClientSession, url: str, *, headers: dict, params: dict,
+                            op_name: str, max_attempts: int = 6, base_backoff: float = 5.0, timeout: int = 15):
+    attempt = 1
+    while True:
+        try:
+            async with session.get(url, headers=headers, params=params, timeout=timeout) as resp:
+                if resp.status == 429:
+                    ra_hdr = resp.headers.get("Retry-After")
+                    if ra_hdr is not None:
+                        try:
+                            delay = float(ra_hdr)
+                        except ValueError:
+                            delay = base_backoff
+                    else:
+                        # Cloudflare 429s often omit Retry-After: fall back to expo backoff
+                        delay = min(300, base_backoff * (2 ** (attempt - 1))) + random.uniform(0, 0.5)
+                    logging.warning(f"[{op_name}] 429 Too Many Requests; attempt={attempt} backoff={delay:.1f}s")
+                    if attempt >= max_attempts:
+                        # One last sleep then raise so the caller can surface it
+                        await asyncio.sleep(delay)
+                        resp.raise_for_status()
+                    await asyncio.sleep(delay)
+                    attempt += 1
+                    continue
+
+                resp.raise_for_status()
+                return await resp.json()
+
+        except ClientResponseError as e:
+            # Retry 5xx; treat other 4xx (besides 429) as fatal
+            if 500 <= e.status < 600 and attempt < max_attempts:
+                delay = min(120, base_backoff * (2 ** (attempt - 1))) + random.uniform(0, 0.4)
+                logging.warning(f"[{op_name}] {e.status} server error; attempt={attempt} backoff={delay:.1f}s")
+                await asyncio.sleep(delay)
+                attempt += 1
+                continue
+            raise
+        except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as e:
+            # Transient network failure
+            if attempt < max_attempts:
+                delay = min(60, base_backoff * (2 ** (attempt - 1))) + random.uniform(0, 0.4)
+                logging.warning(f"[{op_name}] transient error {type(e).__name__}; attempt={attempt} backoff={delay:.1f}s")
+                await asyncio.sleep(delay)
+                attempt += 1
+                continue
+            raise
 async def has_premium(pool, user_id: int) -> bool:
     if IS_DEV:
         return True
@@ -154,23 +208,24 @@ async def revoke_premium(con: "asyncpg.Connection", user_id: int):
 
 API = "https://discord.com/api/v10"
 
-async def _fetch_entitlements_page(session, before: str | None = None):
+async def _fetch_entitlements_page(session: aiohttp.ClientSession, before: str | None = None):
     params = {
         "application_id": str(APP_ID),
         "limit": "100",
-        "sku_ids": PREMIUM_SKU_STR,  # only your premium SKU
+        "sku_ids": PREMIUM_SKU_STR,
         "exclude_deleted": "true",
-        "exclude_ended": "true",     # trims most expired subs
+        "exclude_ended": "true",
     }
     if before:
         params["before"] = before
     headers = {"Authorization": f"Bot {BOT_TOKEN}"}
-    async with session.get(
-        f"{API}/applications/{APP_ID}/entitlements",
-        headers=headers, params=params, timeout=15
-    ) as resp:
-        resp.raise_for_status()
-        return await resp.json()
+
+    url = f"{API}/applications/{APP_ID}/entitlements"
+    # NOTE: this function now *retries* and respects Retry-After/429.
+    return await _get_with_retries(
+        session, url, headers=headers, params=params,
+        op_name="entitlements_page"
+    )
     
 def is_active_entitlement(e: dict, now: datetime) -> bool:
     if e.get("deleted"):
@@ -187,7 +242,7 @@ def is_active_entitlement(e: dict, now: datetime) -> bool:
             return False
     return True
 
-async def fetch_all_entitlements(session):
+async def fetch_all_entitlements(session: aiohttp.ClientSession):
     out, before = [], None
     while True:
         page = await _fetch_entitlements_page(session, before)
@@ -197,6 +252,8 @@ async def fetch_all_entitlements(session):
         before = page[-1]["id"]
         if len(page) < 100:
             break
+        # small jitter between pages to avoid bursts
+        await asyncio.sleep(0.25 + random.uniform(0, 0.25))
     return out
 
 async def sync_entitlements(pool):

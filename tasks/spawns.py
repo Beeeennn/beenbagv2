@@ -68,15 +68,19 @@ def _lock_for(chan_id: int):
     _channel_locks.setdefault(chan_id, asyncio.Lock())
     return _channel_locks[chan_id]
 
+import asyncio, logging, random
+from datetime import datetime, timezone
+from services.discord_limits import call_with_gate
+
+# (keep your existing _lock_for)
+
 async def watch_spawn_expiry(bot, spawn_id, channel_id, message_id, mob_name, expires_at):
     """Sleeps until expiry, removes DB row if still active, deletes the spawn message via PartialMessage,
     and posts a gentle 'escaped' notice — all behind rate-limit/backoff guards."""
     try:
         # Sleep until the exact expiry time (with a tiny random jitter so many tasks don't wake at once)
         now = datetime.now(timezone.utc)
-        delay = max(0.0, (expires_at - now).total_seconds())
-        # Add 0–300ms jitter to de-sync bursts
-        delay += random.uniform(0, 0.3)
+        delay = max(0.0, (expires_at - now).total_seconds()) + random.uniform(0, 0.3)
         if delay > 0:
             await asyncio.sleep(delay)
 
@@ -96,7 +100,9 @@ async def watch_spawn_expiry(bot, spawn_id, channel_id, message_id, mob_name, ex
         channel = bot.get_channel(channel_id)
         if channel is None:
             try:
-                channel = await call_with_gate(bot.fetch_channel(channel_id), op_name="fetch_channel")
+                # IMPORTANT: pass a factory (lambda), not a coroutine object
+                channel = await call_with_gate(lambda: bot.fetch_channel(channel_id),
+                                               op_name="fetch_channel")
             except Exception as e:
                 logging.warning(f"[spawn_expiry] cannot fetch channel {channel_id}: {e}")
                 return
@@ -106,15 +112,15 @@ async def watch_spawn_expiry(bot, spawn_id, channel_id, message_id, mob_name, ex
             # 1) Delete the original message via PartialMessage (NO fetch)
             try:
                 pm = channel.get_partial_message(message_id)
-                await call_with_gate(pm.delete(), op_name="spawn_delete")
+                await call_with_gate(lambda: pm.delete(), op_name="spawn_delete")
             except Exception as e:
                 # Not fatal (it may already be gone, or permissions missing)
                 logging.info(f"[spawn_expiry] delete skipped/failure for {message_id}: {e}")
 
-            # 2) Post a lightweight announcement (kept last; if we're Cloudflared, backoff will handle)
+            # 2) Post a lightweight announcement
             try:
                 await call_with_gate(
-                    channel.send(f"**{mob_name}** escaped, maybe next time", delete_after=60),
+                    lambda: channel.send(f"**{mob_name}** escaped, maybe next time", delete_after=60),
                     op_name="spawn_announce"
                 )
             except Exception as e:
@@ -128,6 +134,7 @@ async def watch_spawn_expiry(bot, spawn_id, channel_id, message_id, mob_name, ex
         raise
     except Exception as e:
         logging.exception(f"[spawn_expiry] unexpected error for spawn_id={spawn_id}: {e}")
+
     
 async def spawn_once_in_channel(bot, chan):
     # ---- pick a mob exactly like before ----
