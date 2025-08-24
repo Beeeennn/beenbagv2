@@ -341,6 +341,11 @@ HELP_TEXTS = {
         "usage": "ytwatch off",
         "aliases": [],
     },
+    "ytwatch mode": {
+    "desc": "Choose whether to announce uploads, livestreams, or both.",
+    "usage": "ytwatch mode [videos|streams|both]",
+    "aliases": [],
+},
 }
 
 
@@ -420,6 +425,7 @@ HELP_CATEGORIES = {
     "ytwatch channel": "Admin Youtube",
     "ytwatch test": "Admin Youtube",
     "ytwatch off": "Admin Youtube",
+    "ytwatch mode": "Admin Youtube",
 
 }
 

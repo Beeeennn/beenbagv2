@@ -111,26 +111,110 @@ async def yt_latest_upload(session: aiohttp.ClientSession, channel_id: str) -> O
         return _parse_latest_video(xml)
     except Exception:
         return None
+# tighten live checks
+def _is_live_player_flags(pr: dict) -> bool:
+    mf = (pr.get("microformat") or {}).get("playerMicroformatRenderer") or {}
+    vd = pr.get("videoDetails") or {}
+    ps = pr.get("playabilityStatus") or {}
+    sd = pr.get("streamingData") or {}
+
+    is_live_flag   = bool(mf.get("isLive"))
+    is_live_vd     = bool(vd.get("isLiveContent"))
+    has_hls        = "hlsManifestUrl" in sd
+    has_livestream = bool(ps.get("liveStreamability"))
+
+    return is_live_flag or is_live_vd or has_hls or has_livestream
+
+
+def _extract_live_from_html(html_text: str) -> tuple[Optional[str], bool]:
+    """
+    Returns (video_id, is_live_now) based on robust player flags.
+    """
+    # ytInitialPlayerResponse
+    m = _PLAYER_JSON.search(html_text)
+    if m:
+        try:
+            pr = json.loads(m.group(1))
+            vid = (pr.get("videoDetails") or {}).get("videoId")
+            live = _is_live_player_flags(pr)
+            if vid:
+                return vid, live
+        except Exception:
+            pass
+
+    # Fallback: ytInitialData sometimes includes a live watch render but we won’t
+    # call it live without player flags. So just try to pull a videoId (not live).
+    m2 = _DATA_JSON.search(html_text)
+    if m2:
+        try:
+            data = json.loads(m2.group(1))
+            text = json.dumps(data)
+            v = re.search(r'"videoId"\s*:\s*"([a-zA-Z0-9_-]{11})"', text)
+            return (v.group(1), False) if v else (None, False)
+        except Exception:
+            pass
+
+    return None, False
+
+
+async def _streams_tab_live_badge(session: aiohttp.ClientSession, token: str) -> bool:
+    """
+    Checks /streams tab for LIVE NOW badge.
+    token: UC… or @handle (without '@')
+    """
+    url = f"https://www.youtube.com/channel/{token}/streams" if token.startswith("UC") \
+          else f"https://www.youtube.com/@{token}/streams"
+
+    async with session.get(url, headers={"User-Agent": USER_AGENT}) as r:
+        if r.status != 200:
+            return False
+        txt = await r.text()
+
+    m = _DATA_JSON.search(txt)
+    if not m:
+        return False
+    try:
+        data = json.loads(m.group(1))
+        # cheap check: look for the literal badge text
+        return "LIVE NOW" in txt
+    except Exception:
+        return False
+
 
 async def yt_live_now(session: aiohttp.ClientSession, channel_token: str) -> tuple[Optional[str], Optional[str]]:
     """
-    channel_token: UC… or @handle (without '@').
-    Returns (live_video_id, watch_url) or (None, None).
+    Robust live check:
+    1) hit /live, follow redirects
+    2) parse player response flags (must indicate live)
+    3) optionally confirm with /streams badge if unsure
     """
     live_url = f"https://www.youtube.com/channel/{channel_token}/live" if channel_token.startswith("UC") \
                else f"https://www.youtube.com/@{channel_token}/live"
 
-    async with session.get(live_url, allow_redirects=True, headers={"User-Agent": USER_AGENT}) as r:
+    async with session.get(
+        live_url,
+        allow_redirects=True,
+        headers={"User-Agent": USER_AGENT, "Cache-Control": "no-cache"}
+    ) as r:
         final_url = str(r.url)
         html_txt = await r.text()
 
     vid = _video_id_from_url(final_url)
-    if vid:
+    _, live_by_flags = _extract_live_from_html(html_txt)
+
+    # If redirected to a watch page, we STILL require live flags.
+    if vid and live_by_flags:
         return vid, f"https://www.youtube.com/watch?v={vid}"
 
-    vid2, is_live = _extract_live_from_html(html_txt)
-    if is_live and vid2:
-        return vid2, f"https://www.youtube.com/watch?v={vid2}"
+    # If flags didn’t say live, do an extra badge check on /streams
+    if await _streams_tab_live_badge(session, channel_token):
+        # try to recover a videoId from the page (best effort)
+        if not vid:
+            vid2, live2 = _extract_live_from_html(html_txt)
+            vid = vid2 if live2 else vid
+        if vid:
+            return vid, f"https://www.youtube.com/watch?v={vid}"
+
     return None, None
 
 # ---------- Twitch helpers (Helix) ----------
@@ -238,7 +322,7 @@ class StreamWatch(commands.Cog):
     @commands.group(name="ytwatch", invoke_without_command=True)
     @commands.has_guild_permissions(manage_guild=True)
     async def ytwatch(self, ctx: commands.Context):
-        await ctx.send("Usage: `ytwatch set <channel-url-or-@handle> [#channel] [@role]`, `ytwatch role [@role|none]`, `ytwatch channel [#channel]`, `ytwatch test`, `ytwatch off`")
+        await ctx.send("Usage: `ytwatch set <channel-url-or-@handle> [#channel] [@role]`, `ytwatch role [@role|none]`, `ytwatch channel [#channel]`,`ytwatch mode [videos|streams|both]`, `ytwatch test`, `ytwatch off`")
 
     @ytwatch.command(name="set")
     @commands.has_guild_permissions(manage_guild=True)
@@ -260,7 +344,23 @@ class StreamWatch(commands.Cog):
                 ctx.guild.id, ucid, ch.id, (role.id if role else None)
             )
         await ctx.send(f"✅ Now watching **{ucid}**. Announcements → {ch.mention}{' • ping ' + role.mention if role else ''}")
+    @ytwatch.command(name="mode")
+    @commands.has_guild_permissions(manage_guild=True)
+    async def yt_mode(self, ctx: commands.Context, mode: str):
+        """
+        Set what gets announced: videos, streams, or both.
+        Usage: ytwatch mode [videos|streams|both]
+        """
+        mode = mode.lower()
+        if mode not in ("videos", "streams", "both"):
+            return await ctx.send("❌ Mode must be one of: `videos`, `streams`, `both`.")
 
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE guild_youtube_watch SET announce_mode=$2 WHERE guild_id=$1",
+                ctx.guild.id, mode
+            )
+        await ctx.send(f"✅ YouTube announcements set to **{mode}**.")
     @ytwatch.command(name="role")
     @commands.has_guild_permissions(manage_guild=True)
     async def yt_role(self, ctx: commands.Context, role: Optional[discord.Role] = None):
@@ -370,7 +470,7 @@ class StreamWatch(commands.Cog):
     async def _check_youtube_for_guild(self, guild_id: int, force: bool = False):
         async with self.bot.db_pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT yt_channel_id, announce_ch_id, ping_role_id, last_video_id, last_live_id FROM guild_youtube_watch WHERE guild_id=$1",
+                "SELECT yt_channel_id, announce_mode, announce_ch_id, ping_role_id, last_video_id, last_live_id FROM guild_youtube_watch WHERE guild_id=$1",
                 guild_id
             )
         if not row:
@@ -388,47 +488,63 @@ class StreamWatch(commands.Cog):
 
         async with aiohttp.ClientSession() as s:
             # uploads/shorts via RSS
-            latest = await yt_latest_upload(s, yt_channel_id)
-            if latest:
-                vid, title, link = latest
-                if force or (vid and vid != last_video_id):
-                    mention = ""
-                    if ping_role_id:
-                        role = guild.get_role(ping_role_id)
-                        if role: mention = role.mention + " "
-                    emb = discord.Embed(
-                        title=f"📺 New video: {html.unescape(title)}",
-                        url=link,
-                        description="A new upload just dropped!",
-                        color=discord.Color.blurple()
-                    )
-                    try:
-                        await channel.send(f"{mention}{link}", embed=emb)
+            announce_mode = row.get("announce_mode") or "both"
+            if announce_mode in ("videos", "both"):
+                latest = await yt_latest_upload(s, yt_channel_id)
+                if latest:
+                    vid, title, link = latest
+                    if not last_video_id:
+                        # First run, just record current ID, no announcement
                         async with self.bot.db_pool.acquire() as conn:
-                            await conn.execute("UPDATE guild_youtube_watch SET last_video_id=$2 WHERE guild_id=$1", guild_id, vid)
-                    except Exception:
-                        pass
-
-            # LIVE now without API
-            live_vid, live_url = await yt_live_now(s, yt_channel_id)
-            if force or (live_vid and live_vid != last_live_id):
-                if live_vid and live_url:
-                    mention = ""
-                    if ping_role_id:
-                        role = guild.get_role(ping_role_id)
-                        if role: mention = role.mention + " "
-                    emb = discord.Embed(
-                        title="🔴 LIVE NOW on YouTube",
-                        url=live_url,
-                        description="Stream just went live!",
-                        color=discord.Color.red()
-                    )
-                    try:
-                        await channel.send(f"{mention}{live_url}", embed=emb)
-                        async with self.bot.db_pool.acquire() as conn:
-                            await conn.execute("UPDATE guild_youtube_watch SET last_live_id=$2 WHERE guild_id=$1", guild_id, live_vid)
-                    except Exception:
-                        pass
+                            await conn.execute(
+                                "UPDATE guild_youtube_watch SET last_video_id=$2 WHERE guild_id=$1",
+                                guild_id, vid
+                            )
+                    elif force or (vid and vid != last_video_id):
+                        mention = ""
+                        if ping_role_id:
+                            role = guild.get_role(ping_role_id)
+                            if role: mention = role.mention + " "
+                        emb = discord.Embed(
+                            title=f"📺 New video: {html.unescape(title)}",
+                            url=link,
+                            description="A new upload just dropped!",
+                            color=discord.Color.blurple()
+                        )
+                        try:
+                            await channel.send(f"{mention}{link}", embed=emb)
+                            async with self.bot.db_pool.acquire() as conn:
+                                await conn.execute("UPDATE guild_youtube_watch SET last_video_id=$2 WHERE guild_id=$1", guild_id, vid)
+                        except Exception:
+                            pass
+            if announce_mode in ("streams", "both"):
+                # LIVE now without API
+                live_vid, live_url = await yt_live_now(s, yt_channel_id)
+                if not last_live_id:
+                    # First run, just record without announcing
+                    async with self.bot.db_pool.acquire() as conn:
+                        await conn.execute(
+                            "UPDATE guild_youtube_watch SET last_live_id=$2 WHERE guild_id=$1",
+                            guild_id, live_vid
+                        )
+                elif force or (live_vid and live_vid != last_live_id):
+                    if live_vid and live_url:
+                        mention = ""
+                        if ping_role_id:
+                            role = guild.get_role(ping_role_id)
+                            if role: mention = role.mention + " "
+                        emb = discord.Embed(
+                            title="🔴 LIVE NOW on YouTube",
+                            url=live_url,
+                            description="Stream just went live!",
+                            color=discord.Color.red()
+                        )
+                        try:
+                            await channel.send(f"{mention}{live_url}", embed=emb)
+                            async with self.bot.db_pool.acquire() as conn:
+                                await conn.execute("UPDATE guild_youtube_watch SET last_live_id=$2 WHERE guild_id=$1", guild_id, live_vid)
+                        except Exception:
+                            pass
 
     async def _check_twitch_for_guild(self, guild_id: int, force: bool = False):
         async with self.bot.db_pool.acquire() as conn:
