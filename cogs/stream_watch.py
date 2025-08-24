@@ -493,7 +493,7 @@ class StreamWatch(commands.Cog):
                 latest = await yt_latest_upload(s, yt_channel_id)
                 if latest:
                     vid, title, link = latest
-                    if not last_video_id:
+                    if not last_video_id and not force:
                         # First run, just record current ID, no announcement
                         async with self.bot.db_pool.acquire() as conn:
                             await conn.execute(
@@ -520,7 +520,7 @@ class StreamWatch(commands.Cog):
             if announce_mode in ("streams", "both"):
                 # LIVE now without API
                 live_vid, live_url = await yt_live_now(s, yt_channel_id)
-                if not last_live_id:
+                if not last_live_id and not force:
                     # First run, just record without announcing
                     async with self.bot.db_pool.acquire() as conn:
                         await conn.execute(
