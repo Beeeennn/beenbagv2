@@ -1,6 +1,7 @@
-from utils.game_helpers import gid_from_ctx,resolve_member
+from utils.game_helpers import gid_from_ctx,resolve_member,give_items, get_items
 import discord
-
+from services.monetization import peek_premium, IS_DEV, has_premium
+from services.achievements import try_grant
 async def inv(pool, ctx, who: str = None):
     """Show your inventory."""
     # Resolve member
@@ -90,4 +91,16 @@ async def inv(pool, ctx, who: str = None):
     embed.set_footer(text="Use !shop to spend your emeralds & resources")
     await ctx.send(embed=embed)
 
-
+async def daily(pool, ctx):
+    ems = 10
+    userid = ctx.author.id
+    gid = gid_from_ctx(ctx)
+    has_prem = peek_premium(userid)
+    if has_prem:
+        ems = 20
+    async with pool.acquire() as conn:
+        await give_items(userid, "emeralds", ems, "emeralds", False, conn, gid)
+        items = await get_items(conn,userid,"emeralds",gid)
+    await ctx.send(f"You colected your {'✨**premium**✨' if has_prem else ''} daily emeralds (**+{ems}**)\n"
+                   f"You now have **{items} emeralds**")
+    await try_grant(pool,ctx,userid,"daily")

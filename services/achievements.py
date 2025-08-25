@@ -192,6 +192,14 @@ ACHIEVEMENTS: Dict[str, Dict[str, Any]] = {
     "repeatable": False,  
     "category":"Hidden",     
     },
+    "daily": {
+    "name": "An Emerald A day",
+    "description": "Use `daily` to collect your daily emeralds",
+    "exp": 2,
+    "hidden": False,
+    "repeatable": False,  
+    "category":"Starter",     
+    },
     "fast_quiz": {
     "name": "Fast AF",
     "description": "Answer a trivia question in less than half a second",
@@ -365,7 +373,7 @@ async def _send_unlock_embed(ctx_or_msg, *, name: str, description: str,
     author = getattr(ctx_or_msg, "author", None)
     if author:
         e.set_author(name=getattr(author, "display_name", "You"), icon_url=_safe_avatar(author))
-    e.set_footer(text="Use `achievement` to see more")
+    e.set_footer(text="Use `achievements` to see more")
     try:
         await _ctx_send(ctx_or_msg, embed=e)
     except Exception:

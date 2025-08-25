@@ -136,6 +136,12 @@ class Game(commands.Cog):
         # services.barn.give(pool, ctx, who, mob)
         await barn.give(self.bot.db_pool, ctx, who, mob)
 
+    @commands.cooldown(1, 86400, commands.BucketType.member)
+    @commands.command(name="daily")
+    async def daily_ems(self, ctx):
+        # services.barn.give(pool, ctx, who, mob)
+        await inventory.daily(self.bot.db_pool, ctx)
+
     @give.error
     async def give_error(self, ctx, error):
         if isinstance(error, commands.MissingRequiredArgument):
