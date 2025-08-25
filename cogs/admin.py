@@ -319,7 +319,8 @@ class Admin(commands.Cog):
             "• game channels saved\n"
             "• log channel saved\n"
             "**NEXT STEPS:**"
-            f"• use `{command_prefix}addmilestione <level> <@role>` to add roles when a user gets to a certain level"
+            f"• use `{command_prefix}addmilestione <level> <@role>` to add roles when a user gets to a certain level\n"
+            f"• you can use `{command_prefix}disablewelcome` to disable to welcom message which @ new users. Other admin commands can be seen in help menu"
         )
 
         # refresh this guild's spawner to pick up changes

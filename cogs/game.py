@@ -135,17 +135,22 @@ class Game(commands.Cog):
     async def give(self, ctx, who: str, *, mob: str):
         # services.barn.give(pool, ctx, who, mob)
         await barn.give(self.bot.db_pool, ctx, who, mob)
-
+    @give.error
+    async def give_error(self, ctx, error):
+        if isinstance(error, commands.MissingRequiredArgument):
+            return await ctx.send(f"❌ Usage: `{ctx.clean_prefix}give <player> <mob>`")
+        raise error
     @commands.cooldown(1, 86400, commands.BucketType.member)
     @commands.command(name="daily")
     async def daily_ems(self, ctx):
         # services.barn.give(pool, ctx, who, mob)
         await inventory.daily(self.bot.db_pool, ctx)
 
-    @give.error
-    async def give_error(self, ctx, error):
-        if isinstance(error, commands.MissingRequiredArgument):
-            return await ctx.send(f"❌ Usage: `{ctx.clean_prefix}give <player> <mob>`")
+    @daily_ems.error
+    async def dem(self, ctx, error):
+        if isinstance(error, commands.CommandOnCooldown):
+            retry = int(error.retry_after)
+            return await ctx.send(f"This command is on cooldown. Try again in {retry} second{'s' if retry != 1 else ''}.")
         raise error
 
     @commands.command(name="breed")
