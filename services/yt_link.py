@@ -4,6 +4,7 @@ import discord
 import string
 import secrets
 import asyncio
+from config import settings
 
 async def make_link_code(length: int = 8) -> str:
     alphabet = string.ascii_uppercase + string.digits
@@ -59,21 +60,23 @@ async def linkyt(pool, ctx, channel_name: str):
         )
 
     # DM them the code
+    verify_url = f"https://www.youtube.com/watch?v={settings.YT_VERIFY_VIDEO_ID}"
 
-    sent = await safe_dm(
-    ctx.author,
-    f"🔗 **YouTube Link Code** 🔗\n"
-    f"Channel: **{channel_name}**\n"
-    f"Your code is: `{code}`\n\n"
-    f"Please type `{ctx.clean_prefix}link {code}` in one of my **livestreams** within 3 hours to complete linking."
-        
+    content = (
+        f"🔗 **YouTube Link Code** 🔗\n"
+        f"Channel (you entered): **{channel_name}**\n"
+        f"Your code is: `{code}`\n\n"
+        f"➡️ Please comment this code on our verification video within 3 hours:\n{verify_url}"
     )
-    if sent:
-        await ctx.send(f"{ctx.author.mention}, check your DMs for the code!")
-    else:
-        await ctx.send(
-            f"{ctx.author.mention}, I couldn’t DM you right now—please try again later. Make sure to enable DMs from server members and try again (Content and social -> Social Permissions -> Direct Messages) You can turn it back off after."
-        )
+
+    # pace-safe DM via outbox
+    await ctx.bot.outbox.dm(ctx.author.id, content)
+
+    # acknowledge in-channel (no 'sent' check since outbox is fire-and-forget)
+    await ctx.send(
+        f"{ctx.author.mention}, I’ve queued your DM with the code. "
+        "If you don’t see it, enable **Direct Messages from server members** and run the command again."
+    )
 async def get_link_channel_ids(pool, guild_id: int) -> list[int]:
     """Return configured link channels for this guild or []."""
     async with pool.acquire() as conn:
@@ -100,7 +103,7 @@ async def yt(pool, ctx, who = None):
             return await ctx.send("Member not found.")  # or "Member not found."
     user_id = member.id
     # 0) Restrict to link channels (if any configured)
-    link_ids = await get_link_channel_ids(ctx.guild.id)
+    link_ids = await get_link_channel_ids(pool,ctx.guild.id)
     if link_ids and ctx.channel.id not in link_ids:
         # build nice mentions for configured channels that still exist
         mentions = [f"<#{cid}>" for cid in link_ids if ctx.guild.get_channel(cid)]
@@ -123,7 +126,7 @@ async def yt(pool, ctx, who = None):
     if not row or (not row["yt_channel_name"] and not row["yt_channel_id"]):
         if member == ctx.author:
             return await ctx.send(
-                "You haven’t linked a YouTube channel! Use `{ctx.clean_prefix}linkyt <channel name>`."
+                f"You haven’t linked a YouTube channel! Use `{ctx.clean_prefix}linkyt <channel name>`."
             )
         else:
             return await ctx.send(f"{member.display_name} hasn’t linked YT yet.")

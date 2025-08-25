@@ -325,6 +325,53 @@ class Admin(commands.Cog):
 
         # refresh this guild's spawner to pick up changes
         start_guild_spawn_task(self.bot, guild_id)
+    # ---------- Announce channel ----------
+    @commands.command(name="setannouncechannel", aliases=["setannounce", "announcechannel"])
+    @commands.has_permissions(administrator=True)
+    async def setannouncechannel(self, ctx: commands.Context, channel: Optional[discord.TextChannel] = None):
+        """
+        Set the announce channel for this server (level-ups, welcomes).
+        Use in a channel with no args to set it to the current channel,
+        or mention a channel to target it, e.g. `#announcements`.
+        """
+        if ctx.guild is None:
+            return await ctx.send("❌ This command can only be used in a server.")
+
+        target = channel or ctx.channel
+
+        # sanity: must be in this guild
+        if target.guild.id != ctx.guild.id:
+            return await ctx.send("❌ That channel isn’t in this server.")
+
+        me = ctx.guild.me
+        perms = target.permissions_for(me)
+        can_send = perms.send_messages or getattr(perms, "send_messages_in_threads", False)
+        if not (perms.view_channel and can_send):
+            return await ctx.send(f"❌ I don’t have permission to post in {target.mention}.")
+
+        async with self.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO guild_settings (guild_id, announce_channel_id)
+                VALUES ($1, $2)
+                ON CONFLICT (guild_id) DO UPDATE
+                SET announce_channel_id = EXCLUDED.announce_channel_id
+                """,
+                ctx.guild.id, target.id
+            )
+
+        await ctx.send(f"✅ Announce channel set to {target.mention}.")
+
+    @setannouncechannel.error
+    async def setannouncechannel_error(self, ctx: commands.Context, error):
+        if isinstance(error, commands.BadArgument):
+            return await ctx.send(
+                f"❌ I couldn't find that channel. "
+                f"Use `{ctx.clean_prefix}setannouncechannel` in the target channel, or mention it like `#announcements`."
+            )
+        if isinstance(error, commands.MissingPermissions):
+            return await ctx.send("❌ You need the **Administrator** permission to do that.")
+        raise error
 
     # ---------- Set prefix (quick) ----------
     @commands.command(name="setprefix", aliases=["prefix"])

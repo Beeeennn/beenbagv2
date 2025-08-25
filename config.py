@@ -42,6 +42,8 @@ class Settings:
     LOG_LEVEL: str
     TEST_GUILDS: Set[int]
 
+    YT_API_KEY: str
+    YT_VERIFY_VIDEO_ID: str          # 11-char YouTube video ID (your one verification video)
     def require_prod(self) -> None:
         """In production, ensure critical settings exist."""
         if not self.IS_DEV:
@@ -69,6 +71,9 @@ def _build() -> Settings:
         ADMIN_TOKEN=os.getenv("ADMIN_TOKEN"),
         LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO"),
         TEST_GUILDS=_parse_id_set(os.getenv("TEST_GUILDS")),
+
+        YT_API_KEY = os.getenv("YT_API_KEY"),
+        YT_VERIFY_VIDEO_ID = os.getenv("YT_VERIFY_VIDEO_ID"),
     )
 
 settings = _build()

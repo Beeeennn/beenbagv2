@@ -77,21 +77,38 @@ class Events(commands.Cog):
             return  # welcomes disabled
 
         # pick channel: announce_channel_id → system_channel → first text channel we can speak in
+        # pick channel: announce_channel_id → system_channel → first text channel we can speak in
         channel = None
-        if row and row["announce_channel_id"]:
-            channel = guild.get_channel(row["announce_channel_id"])
-            if channel and not channel.permissions_for(guild.me).send_messages:
-                channel = None
+        ann_id = int(row["announce_channel_id"]) if row and row["announce_channel_id"] else None
+
+        async def _can_send(ch: discord.abc.GuildChannel | discord.Thread) -> bool:
+            perms = ch.permissions_for(guild.me)
+            return perms.view_channel and (getattr(perms, "send_messages_in_threads", False) or perms.send_messages)
+
+        if ann_id:
+            # Try guild cache → global cache → API fetch (covers threads / uncached)
+            ch = guild.get_channel(ann_id) or self.bot.get_channel(ann_id)
+            if ch is None:
+                try:
+                    ch = await self.bot.fetch_channel(ann_id)  # may raise if invalid/inaccessible
+                except Exception:
+                    ch = None
+
+            # Only allow text channels or threads, and ensure we can speak there
+            if isinstance(ch, (discord.TextChannel, discord.Thread)) and _can_send(ch):
+                channel = ch
+
         if channel is None:
             ch = guild.system_channel
-            if ch and ch.permissions_for(guild.me).send_messages:
+            if ch and _can_send(ch):
                 channel = ch
+
         if channel is None:
             for ch in guild.text_channels:
-                perms = ch.permissions_for(guild.me)
-                if perms.view_channel and perms.send_messages:
+                if _can_send(ch):
                     channel = ch
                     break
+
         if channel is None:
             return  # nowhere safe to speak
 
@@ -201,7 +218,7 @@ class Events(commands.Cog):
         txt = (message.content or "").casefold()
         if "been" in txt:
             try:
-                await call_with_gate(message.add_reaction("👀"), op_name="sideye_react")
+                await call_with_gate(lambda: message.add_reaction("👀"), op_name="sideye_react")
                 await asyncio.sleep(0.1)  # micro‑spacing helps a lot
             except Exception: pass           
         if message.author.bot:
